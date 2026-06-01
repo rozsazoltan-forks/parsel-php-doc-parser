@@ -223,6 +223,19 @@ it('maps withOcr parameters to flags and enables ocr', function (): void {
         ->and($command)->not->toContain('--no-ocr');
 });
 
+it('does not add ocr flags when ocr is disabled', function (): void {
+    $fake = new FakeProcessRunner(['--format text' => '']);
+
+    fakeParse($fake)->withOcr(language: 'eng', tessdataPath: '/usr/share/tessdata')->withoutOcr()->text();
+
+    $command = $fake->recordedCommands()[0];
+
+    expect($command)
+        ->toContain('--no-ocr')
+        ->and($command)->not->toContain('--ocr-language')
+        ->and($command)->not->toContain('--tessdata-path');
+});
+
 it('adds --preserve-small-text', function (): void {
     $fake = new FakeProcessRunner(['--format text' => '']);
 

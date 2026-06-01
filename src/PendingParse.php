@@ -346,12 +346,12 @@ final class PendingParse
 
         if ($this->ocrDisabled) {
             $argv[] = '--no-ocr';
+        } else {
+            $argv = $this->appendFlag($argv, 'ocr-language', $this->ocrLanguage);
+            $argv = $this->appendFlag($argv, 'ocr-server-url', $this->ocrServerUrl);
+            $argv = $this->appendFlag($argv, 'tessdata-path', $this->tessdataPath);
+            $argv = $this->appendFlag($argv, 'num-workers', $this->workers);
         }
-
-        $argv = $this->appendFlag($argv, 'ocr-language', $this->ocrLanguage);
-        $argv = $this->appendFlag($argv, 'ocr-server-url', $this->ocrServerUrl);
-        $argv = $this->appendFlag($argv, 'tessdata-path', $this->tessdataPath);
-        $argv = $this->appendFlag($argv, 'num-workers', $this->workers);
         $argv = $this->appendFlag($argv, 'dpi', $this->dpi);
 
         if ($this->preserveSmallText) {
