@@ -38,3 +38,11 @@ it('throws when the path is not readable', function (): void {
 it('rejects an empty extension for byte sources', function (): void {
     Source::fromBytes('data', '.');
 })->throws(InvalidArgumentException::class);
+
+it('rejects a whitespace-only extension for byte sources', function (): void {
+    Source::fromBytes('data', '   ');
+})->throws(InvalidArgumentException::class);
+
+it('rejects a tab-only extension for byte sources', function (): void {
+    Source::fromBytes('data', "\t");
+})->throws(InvalidArgumentException::class);

@@ -24,7 +24,7 @@ final readonly class Source
 
     public static function fromBytes(string $contents, string $extension): self
     {
-        $normalized = strtolower(ltrim($extension, '.'));
+        $normalized = strtolower(ltrim(trim($extension), '.'));
 
         if ($normalized === '') {
             throw new InvalidArgumentException('A non-empty file extension is required for byte sources so liteparse can detect the format.');
