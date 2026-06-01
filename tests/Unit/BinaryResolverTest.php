@@ -26,3 +26,7 @@ it('falls back to a PATH lookup', function (): void {
 it('throws when the binary cannot be resolved anywhere', function (): void {
     new BinaryResolver(new FakeExecutableFinder)->resolve();
 })->throws(BinaryNotFoundException::class);
+
+it('throws when an empty string is passed as the explicit path', function (): void {
+    new BinaryResolver(new FakeExecutableFinder)->resolve('');
+})->throws(BinaryNotFoundException::class);

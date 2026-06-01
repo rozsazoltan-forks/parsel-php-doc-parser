@@ -19,7 +19,7 @@ final readonly class BinaryResolver
 
     public function resolve(?string $explicit = null): string
     {
-        if ($explicit !== null) {
+        if ($explicit !== null && $explicit !== '') {
             return $explicit;
         }
 
