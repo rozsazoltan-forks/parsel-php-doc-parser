@@ -352,6 +352,7 @@ final class PendingParse
             $argv = $this->appendFlag($argv, 'tessdata-path', $this->tessdataPath);
             $argv = $this->appendFlag($argv, 'num-workers', $this->workers);
         }
+
         $argv = $this->appendFlag($argv, 'dpi', $this->dpi);
 
         if ($this->preserveSmallText) {
