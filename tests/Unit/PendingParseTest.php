@@ -7,6 +7,7 @@ use Shipfastlabs\Parsel\Contracts\ProcessRunner;
 use Shipfastlabs\Parsel\Data\Document;
 use Shipfastlabs\Parsel\Data\Page;
 use Shipfastlabs\Parsel\Exceptions\BinaryNotFoundException;
+use Shipfastlabs\Parsel\Exceptions\FilesystemException;
 use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
 use Shipfastlabs\Parsel\Exceptions\ParseFailedException;
 use Shipfastlabs\Parsel\Exceptions\SourceNotFoundException;
@@ -110,6 +111,12 @@ it('throws when the streaming process fails', function (): void {
 
     iterator_to_array($parse->lazyPages());
 })->throws(ParseFailedException::class);
+
+it('throws when the screenshot directory does not exist', function (): void {
+    Parsel::fake(['screenshot' => '']);
+
+    Parsel::file(fixture('sample.pdf'))->screenshots('/non/existent/directory');
+})->throws(FilesystemException::class);
 
 it('builds the screenshot argv including extra options', function (): void {
     $fake = new FakeProcessRunner(['screenshot' => '']);
