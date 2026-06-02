@@ -44,3 +44,15 @@ it('defaults optional fields to null when absent', function (): void {
         ->and($item->fontName)->toBeNull()
         ->and($item->fontSize)->toBeNull();
 });
+
+it('falls back to snake_case font keys', function (): void {
+    $item = TextItem::fromArray([
+        'text' => 'Hi',
+        'x' => 0, 'y' => 0, 'width' => 0, 'height' => 0,
+        'font_name' => 'Helvetica',
+        'font_size' => 10.0,
+    ]);
+
+    expect($item->fontName)->toBe('Helvetica')
+        ->and($item->fontSize)->toBe(10.0);
+});

@@ -22,7 +22,7 @@ final readonly class Page
      */
     public static function fromArray(array $raw): self
     {
-        $rawItems = $raw['textItems'] ?? [];
+        $rawItems = $raw['textItems'] ?? $raw['text_items'] ?? [];
         $items = [];
 
         if (is_array($rawItems)) {

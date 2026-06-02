@@ -28,6 +28,18 @@ it('tolerates a non-array textItems value', function (): void {
     expect(Page::fromArray(['page' => 1, 'textItems' => 'nope'])->items)->toBe([]);
 });
 
+it('falls back to snake_case text_items key', function (): void {
+    $page = Page::fromArray([
+        'page' => 1,
+        'text_items' => [
+            ['text' => 'hello', 'x' => 1, 'y' => 2, 'width' => 3, 'height' => 4],
+        ],
+    ]);
+
+    expect($page->items)->toHaveCount(1)
+        ->and($page->items[0])->toBeInstanceOf(\Shipfastlabs\Parsel\Data\TextItem::class);
+});
+
 it('skips text items that are not arrays', function (): void {
     $page = Page::fromArray([
         'page' => 1,
