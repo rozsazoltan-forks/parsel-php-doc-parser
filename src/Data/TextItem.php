@@ -29,8 +29,8 @@ final readonly class TextItem
             width: Cast::float($raw['width'] ?? 0),
             height: Cast::float($raw['height'] ?? 0),
             confidence: isset($raw['confidence']) ? Cast::float($raw['confidence']) : null,
-            fontName: isset($raw['font_name']) ? Cast::str($raw['font_name']) : null,
-            fontSize: isset($raw['font_size']) ? Cast::float($raw['font_size']) : null,
+            fontName: isset($raw['fontName']) ? Cast::str($raw['fontName']) : null,
+            fontSize: isset($raw['fontSize']) ? Cast::float($raw['fontSize']) : null,
         );
     }
 

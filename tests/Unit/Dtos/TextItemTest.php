@@ -12,8 +12,8 @@ it('maps a full raw item including font and confidence', function (): void {
         'width' => 3.0,
         'height' => 4.0,
         'confidence' => 0.9,
-        'font_name' => 'Arial',
-        'font_size' => 12.0,
+        'fontName' => 'Arial',
+        'fontSize' => 12.0,
     ]);
 
     expect($item->text)->toBe('Hi')
