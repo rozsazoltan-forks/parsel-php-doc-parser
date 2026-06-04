@@ -37,7 +37,7 @@ it('falls back to snake_case text_items key', function (): void {
     ]);
 
     expect($page->items)->toHaveCount(1)
-        ->and($page->items[0])->toBeInstanceOf(\Shipfastlabs\Parsel\Data\TextItem::class);
+        ->and($page->items[0])->toBeInstanceOf(TextItem::class);
 });
 
 it('skips text items that are not arrays', function (): void {
