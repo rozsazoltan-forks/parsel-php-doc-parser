@@ -46,9 +46,36 @@ it('serializes to an array', function (): void {
         ->and($doc->toArray()['pages'])->toHaveCount(1);
 });
 
+it('maps real liteparse snake_case json into a document', function (): void {
+    /** @var array<string, mixed> $decoded */
+    $decoded = json_decode(fixtureContents('liteparse-output-snake.json'), true);
+
+    $doc = Document::fromLiteParseJson($decoded);
+
+    expect($doc->pageCount())->toBe(2)
+        ->and($doc->pages[0]->number)->toBe(1)
+        ->and($doc->pages[0]->items)->toHaveCount(2)
+        ->and($doc->pages[0]->items[0]->text)->toBe('UNITED STATES')
+        ->and($doc->pages[0]->items[0]->fontName)->toBe('AAAGYH+HelveticaLTStd-Bold')
+        ->and($doc->text)->toBe("UNITED STATES\nForm 10-K\n\nPage two body text");
+});
+
 it('reshapes liteparse json to an array without building the object graph', function (): void {
     /** @var array<string, mixed> $decoded */
     $decoded = json_decode(fixtureContents('liteparse-output.json'), true);
+
+    $array = Document::arrayFromLiteParseJson($decoded);
+
+    expect($array['pages'])->toHaveCount(2)
+        ->and($array['pages'][0])->toHaveKeys(['number', 'width', 'height', 'text', 'items'])
+        ->and($array['pages'][0]['items'])->toHaveCount(2)
+        ->and($array['text'])->toBe("UNITED STATES\nForm 10-K\n\nPage two body text")
+        ->and($array['metadata'])->toBe([]);
+});
+
+it('reshapes liteparse snake_case json to an array without building the object graph', function (): void {
+    /** @var array<string, mixed> $decoded */
+    $decoded = json_decode(fixtureContents('liteparse-output-snake.json'), true);
 
     $array = Document::arrayFromLiteParseJson($decoded);
 
