@@ -75,7 +75,20 @@ final readonly class Document
         return count($this->pages);
     }
 
+    /**
+     * @throws PageNotFoundException
+     */
     public function page(int $number): Page
+    {
+        return $this->find($number) ?? throw PageNotFoundException::forNumber($number);
+    }
+
+    public function hasPage(int $number): bool
+    {
+        return $this->find($number) instanceof Page;
+    }
+
+    private function find(int $number): ?Page
     {
         foreach ($this->pages as $page) {
             if ($page->number === $number) {
@@ -83,7 +96,7 @@ final readonly class Document
             }
         }
 
-        throw PageNotFoundException::forNumber($number);
+        return null;
     }
 
     /**

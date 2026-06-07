@@ -82,9 +82,11 @@ it('returns a page by its 1-based number', function (): void {
         ],
     ]);
 
-    expect($doc->page(2))->toBeInstanceOf(Page::class)
-        ->and($doc->page(2)->number)->toBe(2)
-        ->and($doc->page(2)->text)->toBe('second');
+    $page = $doc->page(2);
+
+    expect($page)->toBeInstanceOf(Page::class)
+        ->and($page->number)->toBe(2)
+        ->and($page->text)->toBe('second');
 });
 
 it('throws PageNotFoundException when the page number does not exist', function (): void {
@@ -92,3 +94,10 @@ it('throws PageNotFoundException when the page number does not exist', function 
 
     $doc->page(99);
 })->throws(PageNotFoundException::class, 'Page 99 was not found in the document.');
+
+it('reports whether a page number exists', function (): void {
+    $doc = Document::fromLiteParseJson(['pages' => [['page' => 1, 'text' => 'a', 'textItems' => []]]]);
+
+    expect($doc->hasPage(1))->toBeTrue()
+        ->and($doc->hasPage(99))->toBeFalse();
+});
