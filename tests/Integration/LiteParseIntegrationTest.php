@@ -32,6 +32,17 @@ it('parses a real pdf into text', function (): void {
     expect($text)->toContain('UNITED STATES');
 })->group('integration');
 
+it('parses a real pdf into markdown', function (): void {
+    if (! litAvailable()) {
+        $this->markTestSkipped('lit binary not installed');
+    }
+
+    $markdown = Parsel::file(demoPdf())->page(1)->withoutOcr()->markdown();
+
+    expect($markdown)->toContain('UNITED STATES')
+        ->and($markdown)->toContain('#');
+})->group('integration');
+
 it('parses a real pdf into a structured document with coordinates', function (): void {
     if (! litAvailable()) {
         $this->markTestSkipped('lit binary not installed');

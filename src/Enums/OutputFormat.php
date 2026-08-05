@@ -11,4 +11,5 @@ enum OutputFormat: string
 {
     case Text = 'text';
     case Json = 'json';
+    case Markdown = 'markdown';
 }

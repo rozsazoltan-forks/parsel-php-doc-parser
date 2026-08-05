@@ -13,6 +13,7 @@ use Shipfastlabs\Parsel\Support\SymfonyProcessRunner;
 
 /**
  * @example $text = Parsel::file('invoice.pdf')->text();
+ * @example $md   = Parsel::file('invoice.pdf')->markdown();
  * @example $doc  = Parsel::file('invoice.pdf')->pageRange(1, 5)->withOcr(language: 'eng')->parse();
  */
 final class Parsel

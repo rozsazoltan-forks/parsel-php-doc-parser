@@ -12,6 +12,7 @@ use Shipfastlabs\Parsel\Contracts\Filesystem;
 use Shipfastlabs\Parsel\Contracts\ProcessRunner;
 use Shipfastlabs\Parsel\Data\Document;
 use Shipfastlabs\Parsel\Data\Page;
+use Shipfastlabs\Parsel\Enums\ImageMode;
 use Shipfastlabs\Parsel\Enums\OutputFormat;
 use Shipfastlabs\Parsel\Exceptions\FilesystemException;
 use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
@@ -42,6 +43,14 @@ final class PendingParse
     private bool $preserveSmallText = false;
 
     private ?string $password = null;
+
+    private ?ImageMode $imageMode = null;
+
+    private ?string $imageDirectory = null;
+
+    private bool $linksDisabled = false;
+
+    private bool $keepHeadersAndFooters = false;
 
     /**
      * @var array<string, string|int|bool>
@@ -141,6 +150,38 @@ final class PendingParse
         return $this->withPassword($password);
     }
 
+    public function withImages(ImageMode|string $mode = ImageMode::Placeholder, ?string $directory = null): self
+    {
+        $this->imageMode = is_string($mode) ? ImageMode::from($mode) : $mode;
+        $this->imageDirectory = $directory ?? $this->imageDirectory;
+
+        return $this;
+    }
+
+    public function withoutImages(): self
+    {
+        return $this->withImages(ImageMode::Off);
+    }
+
+    public function links(bool $enabled = true): self
+    {
+        $this->linksDisabled = ! $enabled;
+
+        return $this;
+    }
+
+    public function withoutLinks(): self
+    {
+        return $this->links(false);
+    }
+
+    public function keepHeadersAndFooters(bool $keep = true): self
+    {
+        $this->keepHeadersAndFooters = $keep;
+
+        return $this;
+    }
+
     public function withBinary(string $path): self
     {
         $this->binary = $path;
@@ -172,6 +213,11 @@ final class PendingParse
         return $this->stripPageHeaders($this->parseResult(OutputFormat::Text)->stdout);
     }
 
+    public function markdown(): string
+    {
+        return trim($this->parseResult(OutputFormat::Markdown)->stdout);
+    }
+
     public function parse(): Document
     {
         return Document::fromLiteParseJson($this->decodeJson());
@@ -189,9 +235,11 @@ final class PendingParse
     {
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 
-        $contents = $extension === 'json'
-            ? trim($this->parseResult(OutputFormat::Json)->stdout)
-            : $this->text();
+        $contents = match ($extension) {
+            'json' => trim($this->parseResult(OutputFormat::Json)->stdout),
+            'md', 'markdown' => $this->markdown(),
+            default => $this->text(),
+        };
 
         $this->files->put($path, $contents);
 
@@ -364,7 +412,31 @@ final class PendingParse
             $argv[] = '--preserve-small-text';
         }
 
+        if ($format === OutputFormat::Markdown) {
+            $argv = $this->appendMarkdownFlags($argv);
+        }
+
         return $this->appendExtraOptions($argv);
+    }
+
+    /**
+     * @param  list<string>  $argv
+     * @return list<string>
+     */
+    private function appendMarkdownFlags(array $argv): array
+    {
+        $argv = $this->appendFlag($argv, 'image-mode', $this->imageMode?->value);
+        $argv = $this->appendFlag($argv, 'image-output-dir', $this->imageDirectory);
+
+        if ($this->linksDisabled) {
+            $argv[] = '--no-links';
+        }
+
+        if ($this->keepHeadersAndFooters) {
+            $argv[] = '--keep-headers-footers';
+        }
+
+        return $argv;
     }
 
     /**

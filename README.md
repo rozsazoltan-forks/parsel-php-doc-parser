@@ -13,7 +13,7 @@
 
 Parsel provides an expressive PHP API for parsing PDFs, Office documents, and images. Your documents are processed locally, allowing you to extract plain text, structured page data, coordinates, and screenshots without sending files to an external service.
 
-Parsel may return plain text, structured document data, page screenshots, or one page at a time for larger documents. It is designed to feel natural in PHP applications while still giving you access to advanced parser options when you need them.
+Parsel may return plain text, Markdown, structured document data, page screenshots, or one page at a time for larger documents. It is designed to feel natural in PHP applications while still giving you access to advanced parser options when you need them.
 
 ```php
 use Shipfastlabs\Parsel;
@@ -137,6 +137,46 @@ $text = Parsel::file('document.pdf')
     ->text();
 ```
 
+## Markdown
+
+The `markdown` method returns the parsed document as Markdown. Headings, paragraphs, lists, and tables are reconstructed from the document layout, which makes the output well suited to LLM prompts, search indexes, and content pipelines.
+
+```php
+$markdown = Parsel::file('document.pdf')->markdown();
+```
+
+Raster images are rendered as Markdown image placeholders by default. You may use the `withImages` method to change how images are handled, and pass a directory when the image bytes should be written to disk:
+
+```php
+use Shipfastlabs\Parsel\Enums\ImageMode;
+
+Parsel::file('document.pdf')->withImages(ImageMode::Off)->markdown();
+
+Parsel::file('document.pdf')->withImages(ImageMode::Embed, '/path/to/images')->markdown();
+```
+
+The `withoutImages` method is a shortcut for `ImageMode::Off`:
+
+```php
+Parsel::file('document.pdf')->withoutImages()->markdown();
+```
+
+Hyperlinks are extracted as Markdown links. If you would rather receive the plain anchor text, you may use the `withoutLinks` method:
+
+```php
+Parsel::file('document.pdf')->withoutLinks()->markdown();
+```
+
+Running headers and footers are stripped from Markdown output. You may keep them using the `keepHeadersAndFooters` method:
+
+```php
+Parsel::file('document.pdf')->keepHeadersAndFooters()->markdown();
+```
+
+These options only shape Markdown output, so they are ignored by the `text`, `parse`, and `toArray` methods.
+
+Markdown output requires `lit` 2.1 or greater.
+
 ## Structured Documents
 
 The `parse` method returns a `Document` object containing the document text, metadata, pages, and positioned text items. This is useful when you need coordinates, font information, or OCR confidence values.
@@ -237,12 +277,14 @@ Parsel::file('document.pdf')->option('some-new-flag', 42);
 
 ## Saving Output
 
-The `save` method writes parsed output to disk and returns the path that was written. When the target path ends in `.json`, Parsel will write JSON output. For all other extensions, Parsel will write plain text.
+The `save` method writes parsed output to disk and returns the path that was written. When the target path ends in `.json`, Parsel will write JSON output. When it ends in `.md` or `.markdown`, Parsel will write Markdown. For all other extensions, Parsel will write plain text.
 
 ```php
 Parsel::file('document.pdf')->save('document.txt');
 
 Parsel::file('document.pdf')->save('document.json');
+
+Parsel::file('document.pdf')->save('document.md');
 ```
 
 ## Screenshots

@@ -6,6 +6,7 @@ use Shipfastlabs\Parsel;
 use Shipfastlabs\Parsel\Contracts\ProcessRunner;
 use Shipfastlabs\Parsel\Data\Document;
 use Shipfastlabs\Parsel\Data\Page;
+use Shipfastlabs\Parsel\Enums\ImageMode;
 use Shipfastlabs\Parsel\Exceptions\BinaryNotFoundException;
 use Shipfastlabs\Parsel\Exceptions\FilesystemException;
 use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
@@ -36,6 +37,70 @@ it('returns an empty string for empty text output', function (): void {
 
     expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('');
 });
+
+it('extracts trimmed markdown', function (): void {
+    Parsel::fake(['--format markdown' => "\n# Heading\n\n| a | b |\n"]);
+
+    expect(Parsel::file(fixture('sample.pdf'))->markdown())->toBe("# Heading\n\n| a | b |");
+});
+
+it('leaves markdown content untouched apart from trimming', function (): void {
+    Parsel::fake(['--format markdown' => "--- Page 1 ---\n\n# Heading"]);
+
+    expect(Parsel::file(fixture('sample.pdf'))->markdown())->toBe("--- Page 1 ---\n\n# Heading");
+});
+
+it('requests the markdown format from the binary', function (): void {
+    $fake = new FakeProcessRunner(['--format markdown' => '']);
+
+    fakeParse($fake)->markdown();
+
+    expect($fake->recordedCommands()[0])->toBe(['lit', 'parse', fixture('sample.pdf'), '--format', 'markdown', '-q', '--no-ocr']);
+});
+
+it('maps markdown options to flags', function (Closure $build, array $expected): void {
+    $fake = new FakeProcessRunner(['--format markdown' => '']);
+
+    $build(fakeParse($fake))->markdown();
+
+    expect($fake->recordedCommands()[0])->toContain(...$expected);
+})->with([
+    'image mode enum' => [fn (PendingParse $parse): PendingParse => $parse->withImages(ImageMode::Embed), ['--image-mode', 'embed']],
+    'image mode string' => [fn (PendingParse $parse): PendingParse => $parse->withImages('off'), ['--image-mode', 'off']],
+    'image directory' => [fn (PendingParse $parse): PendingParse => $parse->withImages(ImageMode::Embed, '/tmp/images'), ['--image-mode', 'embed', '--image-output-dir', '/tmp/images']],
+    'images disabled' => [fn (PendingParse $parse): PendingParse => $parse->withoutImages(), ['--image-mode', 'off']],
+    'default image mode' => [fn (PendingParse $parse): PendingParse => $parse->withImages(), ['--image-mode', 'placeholder']],
+    'links disabled' => [fn (PendingParse $parse): PendingParse => $parse->withoutLinks(), ['--no-links']],
+    'links disabled via links(false)' => [fn (PendingParse $parse): PendingParse => $parse->links(false), ['--no-links']],
+    'headers kept' => [fn (PendingParse $parse): PendingParse => $parse->keepHeadersAndFooters(), ['--keep-headers-footers']],
+]);
+
+it('omits markdown flags that were not configured', function (): void {
+    $fake = new FakeProcessRunner(['--format markdown' => '']);
+
+    fakeParse($fake)->links()->keepHeadersAndFooters(false)->markdown();
+
+    expect($fake->recordedCommands()[0])
+        ->not->toContain('--image-mode')
+        ->not->toContain('--image-output-dir')
+        ->not->toContain('--no-links')
+        ->not->toContain('--keep-headers-footers');
+});
+
+it('does not send markdown flags for text or json output', function (string $method, string $response): void {
+    $fake = new FakeProcessRunner([$response => $response === '--format json' ? fixtureContents('liteparse-output.json') : '']);
+
+    fakeParse($fake)->withImages(ImageMode::Embed, '/tmp/images')->withoutLinks()->keepHeadersAndFooters()->{$method}();
+
+    expect($fake->recordedCommands()[0])
+        ->not->toContain('--image-mode')
+        ->not->toContain('--image-output-dir')
+        ->not->toContain('--no-links')
+        ->not->toContain('--keep-headers-footers');
+})->with([
+    'text' => ['text', '--format text'],
+    'json' => ['parse', '--format json'],
+]);
 
 it('parses into a structured document', function (): void {
     Parsel::fake(['--format json' => fixtureContents('liteparse-output.json')]);
@@ -85,6 +150,17 @@ it('saves text output by extension', function (): void {
 
     unlink($out);
 });
+
+it('saves markdown output by extension', function (string $extension): void {
+    Parsel::fake(['--format markdown' => "# Heading\n"]);
+    $out = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_save_'.uniqid().'.'.$extension;
+
+    Parsel::file(fixture('sample.pdf'))->save($out);
+
+    expect(file_get_contents($out))->toBe('# Heading');
+
+    unlink($out);
+})->with(['md', 'markdown', 'MD']);
 
 it('parses raw bytes through a temporary file', function (): void {
     Parsel::fake(['--format text' => 'from bytes']);
