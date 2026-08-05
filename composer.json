@@ -58,7 +58,6 @@
         }
     },
     "scripts": {
-        "install-lit": "@php bin/parsel-install-lit",
         "lint": [
             "pint --parallel",
             "rector"

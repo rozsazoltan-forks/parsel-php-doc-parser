@@ -8,6 +8,7 @@ use Shipfastlabs\Parsel\Contracts\Driver;
 use Shipfastlabs\Parsel\Exceptions\InvalidProviderOptionsException;
 use Shipfastlabs\Parsel\ParseRequest;
 use Shipfastlabs\Parsel\Support\BinaryResolver;
+use Shipfastlabs\Parsel\Support\CliArguments;
 use Shipfastlabs\Parsel\Support\CliProcess;
 
 final readonly class AnyDocDriver implements Driver
@@ -43,7 +44,7 @@ final readonly class AnyDocDriver implements Driver
         $result = $this->process->run(
             $request->source,
             function (string $file) use ($binary, $options): array {
-                $command = $this->command($binary, $file);
+                $command = CliArguments::command($binary, $file);
                 $format = $options['format'] ?? null;
 
                 if (is_string($format)) {
@@ -51,42 +52,12 @@ final readonly class AnyDocDriver implements Driver
                     $command[] = $format;
                 }
 
-                $extra = $options['extra'] ?? [];
-
-                if (is_array($extra)) {
-                    foreach ($extra as $name => $value) {
-                        if (! is_string($name)) {
-                            continue;
-                        }
-
-                        if ($value === false) {
-                            continue;
-                        }
-
-                        if (! is_string($value) && ! is_int($value) && $value !== true) {
-                            continue;
-                        }
-
-                        $command[] = '--'.$name;
-
-                        if ($value !== true) {
-                            $command[] = (string) $value;
-                        }
-                    }
-                }
-
-                return $command;
+                return CliArguments::appendExtra($command, $options);
             },
             $request->timeout,
             $this->name(),
         );
 
         return trim($result->stdout);
-    }
-
-    /** @return list<string> */
-    private function command(string ...$parts): array
-    {
-        return array_values($parts);
     }
 }

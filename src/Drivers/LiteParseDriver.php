@@ -22,6 +22,7 @@ use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
 use Shipfastlabs\Parsel\Exceptions\InvalidProviderOptionsException;
 use Shipfastlabs\Parsel\ParseRequest;
 use Shipfastlabs\Parsel\Support\BinaryResolver;
+use Shipfastlabs\Parsel\Support\CliArguments;
 use Shipfastlabs\Parsel\Support\CliProcess;
 use Shipfastlabs\Parsel\Support\NativeFilesystem;
 
@@ -89,12 +90,12 @@ final readonly class LiteParseDriver implements Driver, LazyPageDriver, Screensh
         $this->process->run(
             $request->source,
             function (string $file) use ($binary, $directory, $options): array {
-                $command = $this->command($binary, 'screenshot', $file, '-o', $directory, '-q');
+                $command = CliArguments::command($binary, 'screenshot', $file, '-o', $directory, '-q');
                 $command = $this->appendFlag($command, 'target-pages', $this->scalar($options, 'pages'));
                 $command = $this->appendFlag($command, 'dpi', $this->scalar($options, 'dpi'));
                 $command = $this->appendFlag($command, 'password', $this->scalar($options, 'password'));
 
-                return $this->appendExtraOptions($command, $options);
+                return CliArguments::appendExtra($command, $options);
             },
             $request->timeout,
             $this->name(),
@@ -168,7 +169,7 @@ final readonly class LiteParseDriver implements Driver, LazyPageDriver, Screensh
      */
     private function parseArgv(string $binary, string $file, OutputFormat $format, array $options, ?string $output = null): array
     {
-        $command = $this->command($binary, 'parse', $file, '--format', $format->value, '-q');
+        $command = CliArguments::command($binary, 'parse', $file, '--format', $format->value, '-q');
 
         if ($output !== null) {
             $command[] = '-o';
@@ -207,7 +208,7 @@ final readonly class LiteParseDriver implements Driver, LazyPageDriver, Screensh
             }
         }
 
-        return $this->appendExtraOptions($command, $options);
+        return CliArguments::appendExtra($command, $options);
     }
 
     /**
@@ -219,42 +220,6 @@ final readonly class LiteParseDriver implements Driver, LazyPageDriver, Screensh
         if ($value !== null) {
             $command[] = '--'.$name;
             $command[] = (string) $value;
-        }
-
-        return $command;
-    }
-
-    /**
-     * @param  list<string>  $command
-     * @param  array<string, mixed>  $options
-     * @return list<string>
-     */
-    private function appendExtraOptions(array $command, array $options): array
-    {
-        $extra = $options['extra'] ?? [];
-
-        if (! is_array($extra)) {
-            return $command;
-        }
-
-        foreach ($extra as $name => $value) {
-            if (! is_string($name)) {
-                continue;
-            }
-
-            if ($value === false) {
-                continue;
-            }
-
-            if (! is_string($value) && ! is_int($value) && $value !== true) {
-                continue;
-            }
-
-            $command[] = '--'.$name;
-
-            if ($value !== true) {
-                $command[] = (string) $value;
-            }
         }
 
         return $command;
@@ -274,11 +239,5 @@ final readonly class LiteParseDriver implements Driver, LazyPageDriver, Screensh
         $value = $options[$key] ?? null;
 
         return is_string($value) ? $value : null;
-    }
-
-    /** @return list<string> */
-    private function command(string ...$parts): array
-    {
-        return array_values($parts);
     }
 }

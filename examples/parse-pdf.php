@@ -81,6 +81,7 @@ $anydocMarkdown = Parsel::driver('anydoc')->file($pdf)->markdown();
 echo substr($anydocMarkdown, 0, 400)."\n\n";
 
 echo "== 11. text() is unsupported by AnyDoc ==\n";
+
 try {
     Parsel::driver('anydoc')->file($pdf)->text();
 } catch (UnsupportedCapabilityException $e) {

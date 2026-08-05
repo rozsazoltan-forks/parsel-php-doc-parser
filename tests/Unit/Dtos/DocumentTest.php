@@ -62,45 +62,6 @@ it('maps real liteparse snake_case json into a document', function (): void {
         ->and($doc->text)->toBe("UNITED STATES\nForm 10-K\n\nPage two body text");
 });
 
-it('reshapes liteparse json to an array without building the object graph', function (): void {
-    /** @var array<string, mixed> $decoded */
-    $decoded = json_decode(fixtureContents('liteparse-output.json'), true);
-
-    $array = Document::arrayFromLiteParseJson($decoded);
-
-    expect($array['pages'])->toHaveCount(2)
-        ->and($array['pages'][0])->toHaveKeys(['number', 'width', 'height', 'text', 'items'])
-        ->and($array['pages'][0]['items'])->toHaveCount(2)
-        ->and($array['text'])->toBe("UNITED STATES\nForm 10-K\n\nPage two body text")
-        ->and($array['metadata'])->toBe([]);
-});
-
-it('reshapes liteparse snake_case json to an array without building the object graph', function (): void {
-    /** @var array<string, mixed> $decoded */
-    $decoded = json_decode(fixtureContents('liteparse-output-snake.json'), true);
-
-    $array = Document::arrayFromLiteParseJson($decoded);
-
-    expect($array['pages'])->toHaveCount(2)
-        ->and($array['pages'][0])->toHaveKeys(['number', 'width', 'height', 'text', 'items'])
-        ->and($array['pages'][0]['items'])->toHaveCount(2)
-        ->and($array['text'])->toBe("UNITED STATES\nForm 10-K\n\nPage two body text")
-        ->and($array['metadata'])->toBe([]);
-});
-
-it('array reshape tolerates a non-array pages value', function (): void {
-    $array = Document::arrayFromLiteParseJson(['pages' => 'nope']);
-
-    expect($array['pages'])->toBe([])
-        ->and($array['text'])->toBe('');
-});
-
-it('array reshape skips page entries that are not arrays', function (): void {
-    $array = Document::arrayFromLiteParseJson(['pages' => ['bad', ['page' => 1, 'text' => 'a', 'text_items' => []]]]);
-
-    expect($array['pages'])->toHaveCount(1);
-});
-
 it('returns a page by its 1-based number', function (): void {
     $doc = Document::fromLiteParseJson([
         'pages' => [

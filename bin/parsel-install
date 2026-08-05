@@ -26,15 +26,15 @@ if ($driver === 'all' && $manager !== null && ! in_array($manager, ['npm', 'pnpm
     fail('Installing all drivers requires npm, pnpm, or bun.');
 }
 
+if ($withSystemDependencies && ! in_array('liteparse', $targets, true)) {
+    fail('--with-system-dependencies only applies to the liteparse driver.');
+}
+
 foreach ($targets as $target) {
     installDriver($target, $manager);
 }
 
 if ($withSystemDependencies) {
-    if (! in_array('liteparse', $targets, true)) {
-        fail('--with-system-dependencies only applies to the liteparse driver.');
-    }
-
     fwrite(STDOUT, "Installing LibreOffice and ImageMagick...\n");
 
     foreach (systemDependencyCommands() ?: fail('Unable to install system dependencies automatically on this platform. Install LibreOffice and ImageMagick manually.') as $command) {

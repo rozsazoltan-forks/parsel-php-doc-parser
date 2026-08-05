@@ -29,6 +29,7 @@ foreach ($document->pages as $page) {
 }
 
 echo "\n== AnyDoc has no OCR, so it cannot read images ==\n";
+
 try {
     Parsel::driver('anydoc')->file($image)->markdown();
 } catch (ParseFailedException $e) {

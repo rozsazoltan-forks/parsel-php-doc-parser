@@ -43,33 +43,6 @@ final readonly class Document
         return new self($pages, $text, $metadata);
     }
 
-    /**
-     * @param  array<string, mixed>  $decoded
-     * @return array{pages: list<array<string, mixed>>, text: string, metadata: array<string, mixed>}
-     */
-    public static function arrayFromLiteParseJson(array $decoded): array
-    {
-        $rawPages = $decoded['pages'] ?? [];
-        $pages = [];
-        $texts = [];
-
-        if (is_array($rawPages)) {
-            foreach ($rawPages as $rawPage) {
-                if (is_array($rawPage)) {
-                    /** @var array<string, mixed> $rawPage */
-                    $page = Page::fromArray($rawPage);
-                    $pages[] = $page->toArray();
-                    $texts[] = $page->text;
-                }
-            }
-        }
-
-        $metadata = $decoded;
-        unset($metadata['pages']);
-
-        return ['pages' => $pages, 'text' => implode("\n\n", $texts), 'metadata' => $metadata];
-    }
-
     public function pageCount(): int
     {
         return count($this->pages);

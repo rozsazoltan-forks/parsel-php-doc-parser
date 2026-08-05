@@ -77,6 +77,10 @@ final class ParselManager
             return $this->drivers[$name];
         }
 
+        if (isset($this->extensions[$name])) {
+            return $this->drivers[$name] = ($this->extensions[$name])($this);
+        }
+
         $driver = match ($name) {
             'liteparse' => new LiteParseDriver(
                 new CliProcess($this->process, $this->files),
@@ -89,9 +93,7 @@ final class ParselManager
                 new BinaryResolver(name: 'anydoc', envVar: 'PARSEL_ANYDOC_BINARY'),
                 $this->binaries['anydoc'] ?? null,
             ),
-            default => isset($this->extensions[$name])
-                ? ($this->extensions[$name])($this)
-                : throw DriverNotFoundException::named($name),
+            default => throw DriverNotFoundException::named($name),
         };
 
         return $this->drivers[$name] = $driver;
