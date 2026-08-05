@@ -11,7 +11,8 @@ it('builds from a path and lowercases the extension', function (): void {
     $source = Source::fromPath('/docs/report.PDF');
 
     expect($source->extension)->toBe('pdf')
-        ->and($source->isBytes())->toBeFalse();
+        ->and($source->isBytes())->toBeFalse()
+        ->and($source->path())->toBe('/docs/report.PDF');
 });
 
 it('builds from raw bytes', function (): void {
@@ -19,7 +20,8 @@ it('builds from raw bytes', function (): void {
 
     expect($source->extension)->toBe('png')
         ->and($source->isBytes())->toBeTrue()
-        ->and($source->contents())->toBe('rawdata');
+        ->and($source->contents())->toBe('rawdata')
+        ->and($source->path())->toBeNull();
 });
 
 it('returns the path when it exists and is readable', function (): void {

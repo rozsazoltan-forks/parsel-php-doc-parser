@@ -6,13 +6,13 @@ namespace Shipfastlabs\Parsel\Exceptions;
 
 final class InvalidOutputException extends ParselException
 {
-    public static function emptyOutput(): self
+    public static function emptyOutput(string $driver = 'parser'): self
     {
-        return new self('liteparse returned empty output.');
+        return new self(sprintf('%s returned empty output.', $driver));
     }
 
-    public static function malformedJson(string $detail): self
+    public static function malformedJson(string $detail, string $driver = 'parser'): self
     {
-        return new self(sprintf('liteparse returned malformed JSON: %s', $detail));
+        return new self(sprintf('%s returned malformed JSON: %s', $driver, $detail));
     }
 }

@@ -3,21 +3,25 @@
 declare(strict_types=1);
 
 use Shipfastlabs\Parsel;
+use Shipfastlabs\Parsel\Exceptions\UnsupportedCapabilityException;
+use Shipfastlabs\Parsel\Options\LiteParseOptions;
 
 require __DIR__.'/../vendor/autoload.php';
 
 $pdf = __DIR__.'/docs/sample.pdf';
 
+echo "== LiteParse ==\n\n";
+
 echo "== 1. text() ==\n";
-$text = Parsel::file($pdf)->page(2)->withoutOcr()->text();
+$text = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(2)->withoutOcr())->text();
 echo $text."\n\n";
 
 echo "== 2. markdown() ==\n";
-$markdown = Parsel::file($pdf)->page(1)->withoutOcr()->withoutImages()->markdown();
+$markdown = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr()->withoutImages())->markdown();
 echo substr($markdown, 0, 400)."\n\n";
 
 echo "== 3. parse() -> Document with coordinates ==\n";
-$document = Parsel::file($pdf)->page(1)->withoutOcr()->parse();
+$document = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->parse();
 printf("pages=%d, items on page 1=%d\n", $document->pageCount(), count($document->pages[0]->items));
 $item = $document->pages[0]->items[0];
 printf(
@@ -31,20 +35,20 @@ printf(
 );
 
 echo "== 4. pageRange() + withDpi() ==\n";
-$ranged = Parsel::file($pdf)->pageRange(1, 1)->withDpi(150)->withoutOcr()->text();
+$ranged = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->pageRange(1, 1)->withDpi(150)->withoutOcr())->text();
 printf("text length=%d\n\n", strlen($ranged));
 
 echo "== 5. toArray() ==\n";
-$array = Parsel::file($pdf)->page(1)->withoutOcr()->toArray();
+$array = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->toArray();
 echo 'keys: '.implode(', ', array_keys($array))."\n\n";
 
 echo "== 6. save() json + text + markdown ==\n";
 $jsonOut = sys_get_temp_dir().'/parsel-apple-p1.json';
 $textOut = sys_get_temp_dir().'/parsel-apple-p1.txt';
 $markdownOut = sys_get_temp_dir().'/parsel-apple-p1.md';
-Parsel::file($pdf)->page(1)->withoutOcr()->save($jsonOut);
-Parsel::file($pdf)->page(1)->withoutOcr()->save($textOut);
-Parsel::file($pdf)->page(1)->withoutOcr()->save($markdownOut);
+Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->save($jsonOut);
+Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->save($textOut);
+Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->save($markdownOut);
 printf(
     "%s (%d bytes), %s (%d bytes), %s (%d bytes)\n\n",
     $jsonOut,
@@ -58,14 +62,27 @@ printf(
 echo "== 7. screenshots() ==\n";
 $shotDir = sys_get_temp_dir().'/parsel-shots';
 is_dir($shotDir) || mkdir($shotDir);
-$shots = Parsel::file($pdf)->pageRange(1, 5)->screenshots($shotDir);
+$shots = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->pageRange(1, 5))->screenshots($shotDir);
 echo 'generated: '.implode(', ', array_map(static fn (string $path): string => $path, $shots))."\n\n";
 
 echo "== 8. bytes() input ==\n";
 $bytes = (string) file_get_contents($pdf);
-$fromBytes = Parsel::bytes($bytes, 'pdf')->page(1)->withoutOcr()->text();
+$fromBytes = Parsel::bytes($bytes, 'pdf')->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())->text();
 printf("text length=%d\n\n", strlen($fromBytes));
 
 echo "== 9. option() escape hatch ==\n";
-$viaOption = Parsel::file($pdf)->page(1)->withoutOcr()->option('max-pages', 1)->text();
-printf("text length=%d\n", strlen($viaOption));
+$viaOption = Parsel::file($pdf)->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr()->option('max-pages', 1))->text();
+printf("text length=%d\n\n", strlen($viaOption));
+
+echo "== AnyDoc ==\n\n";
+
+echo "== 10. markdown() ==\n";
+$anydocMarkdown = Parsel::driver('anydoc')->file($pdf)->markdown();
+echo substr($anydocMarkdown, 0, 400)."\n\n";
+
+echo "== 11. text() is unsupported by AnyDoc ==\n";
+try {
+    Parsel::driver('anydoc')->file($pdf)->text();
+} catch (UnsupportedCapabilityException $e) {
+    echo $e->getMessage()."\n";
+}

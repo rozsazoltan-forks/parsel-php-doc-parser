@@ -9,12 +9,10 @@ use Shipfastlabs\Parsel\Exceptions\BinaryNotFoundException;
 
 final readonly class BinaryResolver
 {
-    private const string ENV_VAR = 'PARSEL_LIT_BINARY';
-
-    private const string DEFAULT_NAME = 'lit';
-
     public function __construct(
         private ExecutableFinder $finder = new SymfonyExecutableFinder,
+        private string $name = 'lit',
+        private string $envVar = 'PARSEL_LITEPARSE_BINARY',
     ) {}
 
     public function resolve(?string $explicit = null): string
@@ -23,18 +21,22 @@ final readonly class BinaryResolver
             return $explicit;
         }
 
-        $fromEnv = getenv(self::ENV_VAR);
+        $fromEnv = getenv($this->envVar);
+
+        if ((! is_string($fromEnv) || $fromEnv === '') && $this->name === 'lit') {
+            $fromEnv = getenv('PARSEL_LIT_BINARY');
+        }
 
         if (is_string($fromEnv) && $fromEnv !== '') {
             return $fromEnv;
         }
 
-        $found = $this->finder->find(self::DEFAULT_NAME);
+        $found = $this->finder->find($this->name);
 
         if ($found !== null) {
             return $found;
         }
 
-        throw BinaryNotFoundException::onPath(self::DEFAULT_NAME, self::ENV_VAR);
+        throw BinaryNotFoundException::onPath($this->name, $this->envVar);
     }
 }

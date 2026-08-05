@@ -5,193 +5,58 @@ declare(strict_types=1);
 namespace Shipfastlabs\Parsel;
 
 use Generator;
-use JsonException;
-use JsonMachine\Items;
-use JsonMachine\JsonDecoder\ExtJsonDecoder;
+use Shipfastlabs\Parsel\Contracts\Driver;
 use Shipfastlabs\Parsel\Contracts\Filesystem;
-use Shipfastlabs\Parsel\Contracts\ProcessRunner;
+use Shipfastlabs\Parsel\Contracts\LazyPageDriver;
+use Shipfastlabs\Parsel\Contracts\ProviderOptions;
+use Shipfastlabs\Parsel\Contracts\ScreenshotDriver;
+use Shipfastlabs\Parsel\Contracts\StructuredDocumentDriver;
+use Shipfastlabs\Parsel\Contracts\TextDriver;
 use Shipfastlabs\Parsel\Data\Document;
 use Shipfastlabs\Parsel\Data\Page;
-use Shipfastlabs\Parsel\Enums\ImageMode;
-use Shipfastlabs\Parsel\Enums\OutputFormat;
-use Shipfastlabs\Parsel\Exceptions\FilesystemException;
-use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
-use Shipfastlabs\Parsel\Exceptions\ParseFailedException;
-use Shipfastlabs\Parsel\Support\BinaryResolver;
-use Shipfastlabs\Parsel\Support\NativeFilesystem;
-use Shipfastlabs\Parsel\Support\ProcessResult;
-use Shipfastlabs\Parsel\Support\SymfonyProcessRunner;
+use Shipfastlabs\Parsel\Exceptions\InvalidProviderOptionsException;
+use Shipfastlabs\Parsel\Exceptions\UnsupportedCapabilityException;
 
 final class PendingParse
 {
-    private ?string $pages = null;
-
-    private ?int $maxPages = null;
-
-    private bool $ocrDisabled = true;
-
-    private ?string $ocrLanguage = null;
-
-    private ?string $ocrServerUrl = null;
-
-    private ?string $tessdataPath = null;
-
-    private ?int $workers = null;
-
-    private ?int $dpi = null;
-
-    private bool $preserveSmallText = false;
-
-    private ?string $password = null;
-
-    private ?ImageMode $imageMode = null;
-
-    private ?string $imageDirectory = null;
-
-    private bool $linksDisabled = false;
-
-    private bool $keepHeadersAndFooters = false;
-
-    /**
-     * @var array<string, string|int|bool>
-     */
-    private array $extraOptions = [];
+    /** @var array<string, mixed> */
+    private array $providerOptions = [];
 
     public function __construct(
+        private readonly Driver $driver,
         private readonly Source $source,
-        private readonly ProcessRunner $process = new SymfonyProcessRunner,
-        private readonly BinaryResolver $resolver = new BinaryResolver,
-        private readonly Filesystem $files = new NativeFilesystem,
-        private ?string $binary = null,
+        private readonly Filesystem $files,
         private ?float $timeout = 60.0,
     ) {}
 
-    public function page(int $page): self
+    /** @param ProviderOptions|array<string, mixed> $options */
+    public function withProviderOptions(ProviderOptions|array $options): self
     {
-        return $this->appendPages((string) $page);
-    }
+        if ($options instanceof ProviderOptions) {
+            if ($options->provider() !== $this->driver->name()) {
+                throw InvalidProviderOptionsException::forProvider($this->driver->name(), $options->provider());
+            }
 
-    public function pages(int|string ...$pages): self
-    {
-        foreach ($pages as $page) {
-            $this->appendPages((string) $page);
+            $options = $options->toArray();
         }
 
-        return $this;
-    }
+        $this->driver->validateOptions($options);
 
-    public function pageRange(int $from, int $to): self
-    {
-        return $this->appendPages($from.'-'.$to);
-    }
+        if (isset($this->providerOptions['pages'], $options['pages'])
+            && is_string($this->providerOptions['pages'])
+            && is_string($options['pages'])) {
+            $options['pages'] = $this->providerOptions['pages'].','.$options['pages'];
+        }
 
-    public function maxPages(int $max): self
-    {
-        $this->maxPages = $max;
+        if (isset($this->providerOptions['extra'], $options['extra'])
+            && is_array($this->providerOptions['extra'])
+            && is_array($options['extra'])) {
+            $options['extra'] = array_replace($this->providerOptions['extra'], $options['extra']);
+        }
 
-        return $this;
-    }
-
-    public function ocr(bool $enabled = true): self
-    {
-        $this->ocrDisabled = ! $enabled;
+        $this->providerOptions = array_replace($this->providerOptions, $options);
 
         return $this;
-    }
-
-    public function withOcr(
-        ?string $language = null,
-        ?string $tessdataPath = null,
-        ?string $serverUrl = null,
-        ?int $workers = null,
-    ): self {
-        $this->ocrDisabled = false;
-        $this->ocrLanguage = $language ?? $this->ocrLanguage;
-        $this->tessdataPath = $tessdataPath ?? $this->tessdataPath;
-        $this->ocrServerUrl = $serverUrl ?? $this->ocrServerUrl;
-        $this->workers = $workers ?? $this->workers;
-
-        return $this;
-    }
-
-    public function withoutOcr(): self
-    {
-        return $this->ocr(false);
-    }
-
-    public function withDpi(int $dpi): self
-    {
-        $this->dpi = $dpi;
-
-        return $this;
-    }
-
-    public function dpi(int $dpi): self
-    {
-        return $this->withDpi($dpi);
-    }
-
-    public function preserveSmallText(bool $preserve = true): self
-    {
-        $this->preserveSmallText = $preserve;
-
-        return $this;
-    }
-
-    public function withPassword(string $password): self
-    {
-        $this->password = $password;
-
-        return $this;
-    }
-
-    public function password(string $password): self
-    {
-        return $this->withPassword($password);
-    }
-
-    public function withImages(ImageMode|string $mode = ImageMode::Placeholder, ?string $directory = null): self
-    {
-        $this->imageMode = is_string($mode) ? ImageMode::from($mode) : $mode;
-        $this->imageDirectory = $directory ?? $this->imageDirectory;
-
-        return $this;
-    }
-
-    public function withoutImages(): self
-    {
-        return $this->withImages(ImageMode::Off);
-    }
-
-    public function links(bool $enabled = true): self
-    {
-        $this->linksDisabled = ! $enabled;
-
-        return $this;
-    }
-
-    public function withoutLinks(): self
-    {
-        return $this->links(false);
-    }
-
-    public function keepHeadersAndFooters(bool $keep = true): self
-    {
-        $this->keepHeadersAndFooters = $keep;
-
-        return $this;
-    }
-
-    public function withBinary(string $path): self
-    {
-        $this->binary = $path;
-
-        return $this;
-    }
-
-    public function binary(string $path): self
-    {
-        return $this->withBinary($path);
     }
 
     public function withTimeout(?float $seconds): self
@@ -201,34 +66,33 @@ final class PendingParse
         return $this;
     }
 
-    public function option(string $name, string|int|bool $value = true): self
+    public function markdown(): string
     {
-        $this->extraOptions[$name] = $value;
-
-        return $this;
+        return $this->driver->markdown($this->request());
     }
 
     public function text(): string
     {
-        return $this->stripPageHeaders($this->parseResult(OutputFormat::Text)->stdout);
-    }
+        if (! $this->driver instanceof TextDriver) {
+            throw UnsupportedCapabilityException::forDriver($this->driver->name(), 'text');
+        }
 
-    public function markdown(): string
-    {
-        return trim($this->parseResult(OutputFormat::Markdown)->stdout);
+        return $this->driver->text($this->request());
     }
 
     public function parse(): Document
     {
-        return Document::fromLiteParseJson($this->decodeJson());
+        if (! $this->driver instanceof StructuredDocumentDriver) {
+            throw UnsupportedCapabilityException::forDriver($this->driver->name(), 'structured documents');
+        }
+
+        return $this->driver->document($this->request());
     }
 
-    /**
-     * @return array<string, mixed>
-     */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
-        return Document::arrayFromLiteParseJson($this->decodeJson());
+        return $this->parse()->toArray();
     }
 
     public function save(string $path): string
@@ -236,8 +100,8 @@ final class PendingParse
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
 
         $contents = match ($extension) {
-            'json' => trim($this->parseResult(OutputFormat::Json)->stdout),
             'md', 'markdown' => $this->markdown(),
+            'json' => $this->json(),
             default => $this->text(),
         };
 
@@ -246,245 +110,37 @@ final class PendingParse
         return $path;
     }
 
-    /**
-     * @return list<string>
-     */
+    /** @return list<string> */
     public function screenshots(string $directory): array
     {
-        if (! $this->files->exists($directory)) {
-            throw FilesystemException::directoryNotFound($directory);
+        if (! $this->driver instanceof ScreenshotDriver) {
+            throw UnsupportedCapabilityException::forDriver($this->driver->name(), 'screenshots');
         }
 
-        $this->runFor(fn (string $binary, string $file): array => $this->screenshotArgv($binary, $file, $directory));
-
-        return $this->files->files($directory);
+        return $this->driver->screenshots($this->request(), $directory);
     }
 
-    /**
-     * @return Generator<int, Page>
-     */
+    /** @return Generator<int, Page> */
     public function lazyPages(): Generator
     {
-        $output = $this->files->temporaryPath('json');
-
-        try {
-            $this->runToFile($output);
-
-            foreach (Items::fromFile($output, ['pointer' => '/pages', 'decoder' => new ExtJsonDecoder(true)]) as $rawPage) {
-                if (is_array($rawPage)) {
-                    /** @var array<string, mixed> $rawPage */
-                    yield Page::fromArray($rawPage);
-                }
-            }
-        } finally {
-            $this->files->delete($output);
+        if (! $this->driver instanceof LazyPageDriver) {
+            throw UnsupportedCapabilityException::forDriver($this->driver->name(), 'lazy pages');
         }
+
+        yield from $this->driver->pages($this->request());
     }
 
-    private function appendPages(string $fragment): self
+    private function json(): string
     {
-        $this->pages = $this->pages === null ? $fragment : $this->pages.','.$fragment;
+        if (! $this->driver instanceof StructuredDocumentDriver) {
+            throw UnsupportedCapabilityException::forDriver($this->driver->name(), 'JSON');
+        }
 
-        return $this;
+        return $this->driver->json($this->request());
     }
 
-    private function stripPageHeaders(string $text): string
+    private function request(): ParseRequest
     {
-        $stripped = preg_replace('/^--- Page \d+ ---\R?/m', '', $text) ?? $text;
-
-        return trim($stripped);
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function decodeJson(): array
-    {
-        $stdout = trim($this->parseResult(OutputFormat::Json)->stdout);
-
-        if ($stdout === '') {
-            throw InvalidOutputException::emptyOutput();
-        }
-
-        try {
-            $decoded = json_decode($stdout, true, 512, JSON_THROW_ON_ERROR);
-        } catch (JsonException $jsonException) {
-            throw InvalidOutputException::malformedJson($jsonException->getMessage());
-        }
-
-        if (! is_array($decoded)) {
-            throw InvalidOutputException::malformedJson('expected a JSON object');
-        }
-
-        /** @var array<string, mixed> $decoded */
-        return $decoded;
-    }
-
-    private function parseResult(OutputFormat $format): ProcessResult
-    {
-        return $this->runFor(fn (string $binary, string $file): array => $this->parseArgv($binary, $file, $format));
-    }
-
-    /**
-     * @param  callable(string, string): list<string>  $argv
-     */
-    private function runFor(callable $argv): ProcessResult
-    {
-        [$file, $temporary] = $this->resolveFile();
-
-        try {
-            $binary = $this->resolver->resolve($this->binary);
-            $result = $this->process->run($argv($binary, $file), null, $this->timeout);
-        } finally {
-            if ($temporary !== null) {
-                $this->files->delete($temporary);
-            }
-        }
-
-        if (! $result->successful()) {
-            throw ParseFailedException::fromResult($result);
-        }
-
-        return $result;
-    }
-
-    private function runToFile(string $output): void
-    {
-        [$file, $temporary] = $this->resolveFile();
-
-        try {
-            $binary = $this->resolver->resolve($this->binary);
-            $result = $this->process->run($this->parseArgv($binary, $file, OutputFormat::Json, $output), null, $this->timeout);
-        } finally {
-            if ($temporary !== null) {
-                $this->files->delete($temporary);
-            }
-        }
-
-        if (! $result->successful()) {
-            throw ParseFailedException::fromResult($result);
-        }
-    }
-
-    /**
-     * @return array{0: string, 1: string|null}
-     */
-    private function resolveFile(): array
-    {
-        if ($this->source->isBytes()) {
-            $temporary = $this->files->temporaryPath($this->source->extension);
-            $this->files->put($temporary, $this->source->contents());
-
-            return [$temporary, $temporary];
-        }
-
-        return [$this->source->validatedPath($this->files), null];
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function parseArgv(string $binary, string $file, OutputFormat $format, ?string $output = null): array
-    {
-        $argv = [$binary, 'parse', $file, '--format', $format->value, '-q'];
-
-        if ($output !== null) {
-            $argv[] = '-o';
-            $argv[] = $output;
-        }
-
-        $argv = $this->appendFlag($argv, 'target-pages', $this->pages);
-        $argv = $this->appendFlag($argv, 'max-pages', $this->maxPages);
-        $argv = $this->appendFlag($argv, 'password', $this->password);
-
-        if ($this->ocrDisabled) {
-            $argv[] = '--no-ocr';
-        } else {
-            $argv = $this->appendFlag($argv, 'ocr-language', $this->ocrLanguage);
-            $argv = $this->appendFlag($argv, 'ocr-server-url', $this->ocrServerUrl);
-            $argv = $this->appendFlag($argv, 'tessdata-path', $this->tessdataPath);
-            $argv = $this->appendFlag($argv, 'num-workers', $this->workers);
-        }
-
-        $argv = $this->appendFlag($argv, 'dpi', $this->dpi);
-
-        if ($this->preserveSmallText) {
-            $argv[] = '--preserve-small-text';
-        }
-
-        if ($format === OutputFormat::Markdown) {
-            $argv = $this->appendMarkdownFlags($argv);
-        }
-
-        return $this->appendExtraOptions($argv);
-    }
-
-    /**
-     * @param  list<string>  $argv
-     * @return list<string>
-     */
-    private function appendMarkdownFlags(array $argv): array
-    {
-        $argv = $this->appendFlag($argv, 'image-mode', $this->imageMode?->value);
-        $argv = $this->appendFlag($argv, 'image-output-dir', $this->imageDirectory);
-
-        if ($this->linksDisabled) {
-            $argv[] = '--no-links';
-        }
-
-        if ($this->keepHeadersAndFooters) {
-            $argv[] = '--keep-headers-footers';
-        }
-
-        return $argv;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function screenshotArgv(string $binary, string $file, string $directory): array
-    {
-        $argv = [$binary, 'screenshot', $file, '-o', $directory, '-q'];
-
-        $argv = $this->appendFlag($argv, 'target-pages', $this->pages);
-        $argv = $this->appendFlag($argv, 'dpi', $this->dpi);
-        $argv = $this->appendFlag($argv, 'password', $this->password);
-
-        return $this->appendExtraOptions($argv);
-    }
-
-    /**
-     * @param  list<string>  $argv
-     * @return list<string>
-     */
-    private function appendFlag(array $argv, string $name, string|int|null $value): array
-    {
-        if ($value !== null) {
-            $argv[] = '--'.$name;
-            $argv[] = (string) $value;
-        }
-
-        return $argv;
-    }
-
-    /**
-     * @param  list<string>  $argv
-     * @return list<string>
-     */
-    private function appendExtraOptions(array $argv): array
-    {
-        foreach ($this->extraOptions as $name => $value) {
-            if ($value === false) {
-                continue;
-            }
-
-            $argv[] = '--'.$name;
-
-            if ($value !== true) {
-                $argv[] = (string) $value;
-            }
-        }
-
-        return $argv;
+        return new ParseRequest($this->source, $this->providerOptions, $this->timeout);
     }
 }

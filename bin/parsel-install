@@ -1,0 +1,142 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$driver = 'liteparse';
+$manager = null;
+$withSystemDependencies = false;
+
+foreach (array_slice($argv, 1) as $argument) {
+    match (true) {
+        str_starts_with($argument, '--driver=') => $driver = substr($argument, 9),
+        str_starts_with($argument, '--manager=') => $manager = substr($argument, 10),
+        $argument === '--with-system-dependencies' => $withSystemDependencies = true,
+        default => fail("Unknown option: {$argument}\nUsage: parsel-install [--driver=liteparse|anydoc|all] [--manager=npm|pnpm|bun|pip|cargo] [--with-system-dependencies]"),
+    };
+}
+
+if (! in_array($driver, ['liteparse', 'anydoc', 'all'], true)) {
+    fail("Unsupported driver [{$driver}]. Use liteparse, anydoc, or all.");
+}
+
+$targets = $driver === 'all' ? ['liteparse', 'anydoc'] : [$driver];
+
+if ($driver === 'all' && $manager !== null && ! in_array($manager, ['npm', 'pnpm', 'bun'], true)) {
+    fail('Installing all drivers requires npm, pnpm, or bun.');
+}
+
+foreach ($targets as $target) {
+    installDriver($target, $manager);
+}
+
+if ($withSystemDependencies) {
+    if (! in_array('liteparse', $targets, true)) {
+        fail('--with-system-dependencies only applies to the liteparse driver.');
+    }
+
+    fwrite(STDOUT, "Installing LibreOffice and ImageMagick...\n");
+
+    foreach (systemDependencyCommands() ?: fail('Unable to install system dependencies automatically on this platform. Install LibreOffice and ImageMagick manually.') as $command) {
+        if (run($command) !== 0) {
+            fail('Unable to install system dependencies. Install LibreOffice and ImageMagick manually.');
+        }
+    }
+}
+
+function installDriver(string $driver, ?string $manager): void
+{
+    $binary = $driver === 'liteparse' ? 'lit' : 'anydoc';
+    $packages = $driver === 'liteparse'
+        ? [
+            'npm' => ['npm', 'install', '-g', '@llamaindex/liteparse'],
+            'pnpm' => ['pnpm', 'add', '-g', '@llamaindex/liteparse'],
+            'bun' => ['bun', 'add', '-g', '@llamaindex/liteparse'],
+            'pip' => ['pip', 'install', 'liteparse'],
+            'cargo' => ['cargo', 'install', 'liteparse'],
+        ]
+        : [
+            'npm' => ['npm', 'install', '-g', '@firecrawl/anydoc'],
+            'pnpm' => ['pnpm', 'add', '-g', '@firecrawl/anydoc'],
+            'bun' => ['bun', 'add', '-g', '@firecrawl/anydoc'],
+        ];
+
+    if ($manager !== null && ! isset($packages[$manager])) {
+        fail("The {$driver} driver cannot be installed using [{$manager}]. Supported managers: ".implode(', ', array_keys($packages)).'.');
+    }
+
+    if ($found = executable($binary)) {
+        fwrite(STDOUT, "{$binary} is already installed at {$found}.\n");
+
+        return;
+    }
+
+    $selected = $manager ?? firstExecutable(array_keys($packages));
+
+    if ($selected === null) {
+        fail("Unable to install {$binary} automatically. Install one of ".implode(', ', array_keys($packages)).' and try again.');
+    }
+
+    fwrite(STDOUT, "Installing {$binary} using {$selected}...\n");
+
+    if (run($packages[$selected]) !== 0) {
+        fail("Unable to install {$binary} using {$selected}.");
+    }
+
+    if (! $found = executable($binary)) {
+        fail("{$binary} was installed, but it could not be found on PATH. Restart your shell or add its binary directory to PATH.");
+    }
+
+    fwrite(STDOUT, "{$binary} installed successfully at {$found}.\n");
+}
+
+/** @param list<string> $commands */
+function firstExecutable(array $commands): ?string
+{
+    foreach ($commands as $command) {
+        if (executable($command)) {
+            return $command;
+        }
+    }
+
+    return null;
+}
+
+/** @return list<list<string>> */
+function systemDependencyCommands(): array
+{
+    return match (true) {
+        PHP_OS_FAMILY === 'Darwin' && executable('brew') => [['brew', 'install', '--cask', 'libreoffice'], ['brew', 'install', 'imagemagick']],
+        PHP_OS_FAMILY === 'Linux' && executable('apt-get') => [apt('libreoffice'), apt('imagemagick')],
+        PHP_OS_FAMILY === 'Windows' && executable('choco') => [['choco', 'install', 'libreoffice-fresh', '-y'], ['choco', 'install', 'imagemagick.app', '-y']],
+        default => [],
+    };
+}
+
+/** @return list<string> */
+function apt(string $package): array
+{
+    $prefix = (! function_exists('posix_geteuid') || posix_geteuid() !== 0) && executable('sudo') ? ['sudo'] : [];
+
+    return [...$prefix, 'apt-get', 'install', '-y', $package];
+}
+
+function executable(string $command): string
+{
+    return trim((string) shell_exec(PHP_OS_FAMILY === 'Windows' ? 'where '.escapeshellarg($command).' 2>NUL' : 'command -v '.escapeshellarg($command).' 2>/dev/null'));
+}
+
+/** @param list<string> $command */
+function run(array $command): int
+{
+    passthru(implode(' ', array_map(escapeshellarg(...), $command)), $exitCode);
+
+    return $exitCode;
+}
+
+function fail(string $message): never
+{
+    fwrite(STDERR, rtrim($message)."\n");
+
+    exit(1);
+}

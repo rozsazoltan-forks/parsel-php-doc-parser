@@ -3,459 +3,66 @@
 declare(strict_types=1);
 
 use Shipfastlabs\Parsel;
-use Shipfastlabs\Parsel\Contracts\ProcessRunner;
-use Shipfastlabs\Parsel\Data\Document;
-use Shipfastlabs\Parsel\Data\Page;
-use Shipfastlabs\Parsel\Enums\ImageMode;
-use Shipfastlabs\Parsel\Exceptions\BinaryNotFoundException;
-use Shipfastlabs\Parsel\Exceptions\FilesystemException;
-use Shipfastlabs\Parsel\Exceptions\InvalidOutputException;
-use Shipfastlabs\Parsel\Exceptions\ParseFailedException;
-use Shipfastlabs\Parsel\Exceptions\SourceNotFoundException;
+use Shipfastlabs\Parsel\Exceptions\InvalidProviderOptionsException;
+use Shipfastlabs\Parsel\Exceptions\UnsupportedCapabilityException;
+use Shipfastlabs\Parsel\Options\AnyDocOptions;
 use Shipfastlabs\Parsel\PendingParse;
-use Shipfastlabs\Parsel\Source;
-use Shipfastlabs\Parsel\Support\BinaryResolver;
 use Shipfastlabs\Parsel\Support\FakeProcessRunner;
-use Shipfastlabs\Parsel\Support\ProcessResult;
-use Tests\Doubles\FakeExecutableFinder;
-use Tests\Doubles\FakeJsonOutputRunner;
 
-it('extracts trimmed text', function (): void {
-    Parsel::fake(['--format text' => '  hello world  ']);
-
-    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('hello world');
-});
-
-it('strips lit page-header markers from text', function (): void {
-    Parsel::fake(['--format text' => "--- Page 1 ---\nAlpha line\n--- Page 2 ---\nBeta line"]);
-
-    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe("Alpha line\nBeta line");
-});
-
-it('returns an empty string for empty text output', function (): void {
-    Parsel::fake(['--format text' => '']);
-
-    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('');
-});
-
-it('extracts trimmed markdown', function (): void {
-    Parsel::fake(['--format markdown' => "\n# Heading\n\n| a | b |\n"]);
-
-    expect(Parsel::file(fixture('sample.pdf'))->markdown())->toBe("# Heading\n\n| a | b |");
-});
-
-it('leaves markdown content untouched apart from trimming', function (): void {
-    Parsel::fake(['--format markdown' => "--- Page 1 ---\n\n# Heading"]);
-
-    expect(Parsel::file(fixture('sample.pdf'))->markdown())->toBe("--- Page 1 ---\n\n# Heading");
-});
-
-it('requests the markdown format from the binary', function (): void {
-    $fake = new FakeProcessRunner(['--format markdown' => '']);
-
-    fakeParse($fake)->markdown();
-
-    expect($fake->recordedCommands()[0])->toBe(['lit', 'parse', fixture('sample.pdf'), '--format', 'markdown', '-q', '--no-ocr']);
-});
-
-it('maps markdown options to flags', function (Closure $build, array $expected): void {
-    $fake = new FakeProcessRunner(['--format markdown' => '']);
-
-    $build(fakeParse($fake))->markdown();
-
-    expect($fake->recordedCommands()[0])->toContain(...$expected);
-})->with([
-    'image mode enum' => [fn (PendingParse $parse): PendingParse => $parse->withImages(ImageMode::Embed), ['--image-mode', 'embed']],
-    'image mode string' => [fn (PendingParse $parse): PendingParse => $parse->withImages('off'), ['--image-mode', 'off']],
-    'image directory' => [fn (PendingParse $parse): PendingParse => $parse->withImages(ImageMode::Embed, '/tmp/images'), ['--image-mode', 'embed', '--image-output-dir', '/tmp/images']],
-    'images disabled' => [fn (PendingParse $parse): PendingParse => $parse->withoutImages(), ['--image-mode', 'off']],
-    'default image mode' => [fn (PendingParse $parse): PendingParse => $parse->withImages(), ['--image-mode', 'placeholder']],
-    'links disabled' => [fn (PendingParse $parse): PendingParse => $parse->withoutLinks(), ['--no-links']],
-    'links disabled via links(false)' => [fn (PendingParse $parse): PendingParse => $parse->links(false), ['--no-links']],
-    'headers kept' => [fn (PendingParse $parse): PendingParse => $parse->keepHeadersAndFooters(), ['--keep-headers-footers']],
-]);
-
-it('omits markdown flags that were not configured', function (): void {
-    $fake = new FakeProcessRunner(['--format markdown' => '']);
-
-    fakeParse($fake)->links()->keepHeadersAndFooters(false)->markdown();
-
-    expect($fake->recordedCommands()[0])
-        ->not->toContain('--image-mode')
-        ->not->toContain('--image-output-dir')
-        ->not->toContain('--no-links')
-        ->not->toContain('--keep-headers-footers');
-});
-
-it('does not send markdown flags for text or json output', function (string $method, string $response): void {
-    $fake = new FakeProcessRunner([$response => $response === '--format json' ? fixtureContents('liteparse-output.json') : '']);
-
-    fakeParse($fake)->withImages(ImageMode::Embed, '/tmp/images')->withoutLinks()->keepHeadersAndFooters()->{$method}();
-
-    expect($fake->recordedCommands()[0])
-        ->not->toContain('--image-mode')
-        ->not->toContain('--image-output-dir')
-        ->not->toContain('--no-links')
-        ->not->toContain('--keep-headers-footers');
-})->with([
-    'text' => ['text', '--format text'],
-    'json' => ['parse', '--format json'],
-]);
-
-it('parses into a structured document', function (): void {
-    Parsel::fake(['--format json' => fixtureContents('liteparse-output.json')]);
-
-    $document = Parsel::file(fixture('sample.pdf'))->pageRange(1, 5)->withOcr(language: 'eng')->withDpi(300)->parse();
-
-    expect($document)->toBeInstanceOf(Document::class)
-        ->and($document->pageCount())->toBe(2)
-        ->and($document->pages[0]->items[0]->text)->toBe('UNITED STATES');
-});
-
-it('populates text items and font data from camelCase binary output', function (): void {
-    Parsel::fake(['--format json' => fixtureContents('liteparse-output.json')]);
-
-    $document = Parsel::file(fixture('sample.pdf'))->parse();
-    $item = $document->pages[0]->items[0];
-
-    expect($document->pages[0]->items)->not->toBeEmpty()
-        ->and($item->text)->toBe('UNITED STATES')
-        ->and($item->fontName)->toBe('AAAGYH+HelveticaLTStd-Bold')
-        ->and($item->fontSize)->toBe(13.0);
-});
-
-it('returns the document as an array', function (): void {
-    Parsel::fake(['--format json' => fixtureContents('liteparse-output.json')]);
-
-    expect(Parsel::file(fixture('sample.pdf'))->toArray())->toHaveKeys(['pages', 'text', 'metadata']);
-});
-
-it('saves liteparse json verbatim by extension', function (): void {
-    Parsel::fake(['--format json' => fixtureContents('liteparse-output.json')]);
-    $out = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_save_'.uniqid().'.json';
-
-    expect(Parsel::file(fixture('sample.pdf'))->save($out))->toBe($out)
-        ->and(file_get_contents($out))->toContain('"textItems"');
-
-    unlink($out);
-});
-
-it('saves text output by extension', function (): void {
-    Parsel::fake(['--format text' => 'plain text body']);
-    $out = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_save_'.uniqid().'.txt';
-
-    Parsel::file(fixture('sample.pdf'))->save($out);
-
-    expect(file_get_contents($out))->toBe('plain text body');
-
-    unlink($out);
-});
-
-it('saves markdown output by extension', function (string $extension): void {
-    Parsel::fake(['--format markdown' => "# Heading\n"]);
-    $out = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_save_'.uniqid().'.'.$extension;
-
-    Parsel::file(fixture('sample.pdf'))->save($out);
-
-    expect(file_get_contents($out))->toBe('# Heading');
-
-    unlink($out);
-})->with(['md', 'markdown', 'MD']);
-
-it('parses raw bytes through a temporary file', function (): void {
-    Parsel::fake(['--format text' => 'from bytes']);
-
-    expect(Parsel::bytes('rawdata', 'pdf')->text())->toBe('from bytes');
-});
-
-it('streams pages lazily from a file source', function (): void {
-    $runner = new FakeJsonOutputRunner(fixtureContents('liteparse-output.json'));
-    $parse = new PendingParse(Source::fromPath(fixture('sample.pdf')), $runner, binary: 'lit');
-
-    $pages = iterator_to_array($parse->lazyPages());
-
-    expect($pages)->toHaveCount(2)
-        ->and($pages[0])->toBeInstanceOf(Page::class)
-        ->and($pages[0]->items[0]->text)->toBe('UNITED STATES');
-});
-
-it('streams pages lazily from a bytes source', function (): void {
-    $runner = new FakeJsonOutputRunner(fixtureContents('liteparse-output.json'));
-    $parse = new PendingParse(Source::fromBytes('rawdata', 'pdf'), $runner, binary: 'lit');
-
-    expect(iterator_to_array($parse->lazyPages()))->toHaveCount(2);
-});
-
-it('skips non-array page entries while streaming', function (): void {
-    $runner = new FakeJsonOutputRunner('{"pages":["bad",{"page":1,"text":"a","textItems":[]}]}');
-    $parse = new PendingParse(Source::fromPath(fixture('sample.pdf')), $runner, binary: 'lit');
-
-    expect(iterator_to_array($parse->lazyPages()))->toHaveCount(1);
-});
-
-it('throws when the streaming process fails', function (): void {
-    $runner = new FakeJsonOutputRunner('', 3);
-    $parse = new PendingParse(Source::fromPath(fixture('sample.pdf')), $runner, binary: 'lit');
-
-    iterator_to_array($parse->lazyPages());
-})->throws(ParseFailedException::class);
-
-it('throws when the screenshot directory does not exist', function (): void {
-    Parsel::fake(['screenshot' => '']);
-
-    Parsel::file(fixture('sample.pdf'))->screenshots('/non/existent/directory');
-})->throws(FilesystemException::class);
-
-it('builds the screenshot argv including extra options', function (): void {
-    $fake = new FakeProcessRunner(['screenshot' => '']);
-    $parse = new PendingParse(Source::fromPath(fixture('sample.pdf')), $fake, binary: 'lit');
-    $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_shots_'.uniqid();
-    mkdir($directory);
-
-    $parse->page(1)->withDpi(150)->withPassword('pw')->option('foo')->screenshots($directory);
-
-    expect($fake->recordedCommands()[0])
-        ->toContain('screenshot', '-o', $directory, '--target-pages', '1', '--dpi', '150', '--password', 'pw', '--foo');
-
-    rmdir($directory);
-});
-
-it('returns all files in the screenshot directory', function (): void {
-    $directory = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_shots_'.uniqid();
-    mkdir($directory);
-    file_put_contents($directory.DIRECTORY_SEPARATOR.'old.png', 'stale');
-
-    Parsel::swap(new readonly class($directory) implements ProcessRunner
-    {
-        public function __construct(private string $directory) {}
-
-        public function run(array $command, ?string $input = null, ?float $timeout = 60.0): ProcessResult
-        {
-            file_put_contents($this->directory.DIRECTORY_SEPARATOR.'page_1.png', 'png');
-
-            return new ProcessResult(0, '', '', $command);
-        }
-    });
-
-    $files = Parsel::file(fixture('sample.pdf'))->screenshots($directory);
-
-    expect($files)->toBe([
-        $directory.DIRECTORY_SEPARATOR.'old.png',
-        $directory.DIRECTORY_SEPARATOR.'page_1.png',
-    ]);
-
-    unlink($directory.DIRECTORY_SEPARATOR.'old.png');
-    unlink($directory.DIRECTORY_SEPARATOR.'page_1.png');
-    rmdir($directory);
-});
-
-it('builds the base parse argv with quiet and format', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->text();
-
-    expect($fake->recordedCommands()[0])->toBe(['lit', 'parse', fixture('sample.pdf'), '--format', 'text', '-q', '--no-ocr']);
-});
-
-it('maps simple options to flags', function (string $method, array $args, array $expected): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->{$method}(...$args)->text();
-
-    expect($fake->recordedCommands()[0])->toContain(...$expected);
-})->with([
-    'maxPages' => ['maxPages', [50], ['--max-pages', '50']],
-    'password' => ['password', ['secret'], ['--password', 'secret']],
-    'dpi' => ['dpi', [300], ['--dpi', '300']],
-]);
-
-it('adds --no-ocr by default', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->text();
-
-    expect($fake->recordedCommands()[0])->toContain('--no-ocr');
-});
-
-it('adds --no-ocr when withoutOcr is called', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->withoutOcr()->text();
-
-    expect($fake->recordedCommands()[0])->toContain('--no-ocr');
-});
-
-it('does not add --no-ocr when withOcr is called', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->withOcr()->text();
-
-    expect($fake->recordedCommands()[0])->not->toContain('--no-ocr');
-});
-
-it('does not add --no-ocr when ocr(true) is called', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->ocr(true)->text();
-
-    expect($fake->recordedCommands()[0])->not->toContain('--no-ocr');
-});
-
-it('maps withOcr parameters to flags and enables ocr', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->withOcr(
-        language: 'fra',
-        tessdataPath: '/usr/share/tessdata',
-        serverUrl: 'http://localhost:8828/ocr',
-        workers: 8,
-    )->text();
-
-    $command = $fake->recordedCommands()[0];
-
-    expect($command)
-        ->toContain('--ocr-language', 'fra', '--tessdata-path', '/usr/share/tessdata', '--ocr-server-url', 'http://localhost:8828/ocr', '--num-workers', '8')
-        ->and($command)->not->toContain('--no-ocr');
-});
-
-it('does not add ocr flags when ocr is disabled', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->withOcr(language: 'eng', tessdataPath: '/usr/share/tessdata')->withoutOcr()->text();
-
-    $command = $fake->recordedCommands()[0];
-
-    expect($command)
-        ->toContain('--no-ocr')
-        ->and($command)->not->toContain('--ocr-language')
-        ->and($command)->not->toContain('--tessdata-path');
-});
-
-it('adds --preserve-small-text', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->preserveSmallText()->text();
-
-    expect($fake->recordedCommands()[0])->toContain('--preserve-small-text');
-});
-
-it('normalizes page selection', function (Closure $build, string $expected): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    $build(fakeParse($fake))->text();
-
-    $command = $fake->recordedCommands()[0];
-    $index = array_search('--target-pages', $command, true);
-
-    expect($command[$index + 1])->toBe($expected);
-})->with([
-    'single page' => [fn (PendingParse $parse): PendingParse => $parse->page(7), '7'],
-    'page list' => [fn (PendingParse $parse): PendingParse => $parse->pages(1, 3, 5), '1,3,5'],
-    'range strings' => [fn (PendingParse $parse): PendingParse => $parse->pages('2-4', 9), '2-4,9'],
-    'inclusive range' => [fn (PendingParse $parse): PendingParse => $parse->pageRange(1, 5), '1-5'],
-    'additive' => [fn (PendingParse $parse): PendingParse => $parse->pageRange(1, 5)->page(10), '1-5,10'],
-]);
-
-it('appends a boolean escape-hatch option as a bare flag', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->option('experimental')->text();
-
-    expect($fake->recordedCommands()[0])->toContain('--experimental');
-});
-
-it('appends a scalar escape-hatch option with its value', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->option('threads', 8)->text();
-
-    expect($fake->recordedCommands()[0])->toContain('--threads', '8');
-});
-
-it('omits an escape-hatch option set to false', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->option('debug', false)->text();
-
-    expect($fake->recordedCommands()[0])->not->toContain('--debug');
-});
-
-it('uses a per-call binary override', function (): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-    $parse = new PendingParse(Source::fromPath(fixture('sample.pdf')), $fake);
-
-    $parse->withBinary('/custom/lit')->text();
-
-    expect($fake->recordedCommands()[0][0])->toBe('/custom/lit');
-});
-
-it('accepts a timeout override', function (): void {
+it('accepts strict arrays and merges repeated provider options', function (): void {
     $fake = new FakeProcessRunner(['--format text' => 'ok']);
 
-    expect(fakeParse($fake)->withTimeout(1.5)->text())->toBe('ok');
+    fakeParse($fake)
+        ->withProviderOptions(['pages' => '1-2', 'extra' => ['alpha' => true]])
+        ->withProviderOptions(['pages' => '5', 'extra' => ['beta' => 2]])
+        ->text();
+
+    expect($fake->recordedCommands()[0])->toContain('--target-pages', '1-2,5', '--alpha', '--beta', '2');
 });
 
-it('throws and carries details when the process exits non-zero', function (): void {
-    $fake = new FakeProcessRunner(['parse' => new ProcessResult(5, '', 'boom', ['lit', 'parse', 'f'])]);
-    $caught = null;
-
-    try {
-        fakeParse($fake)->text();
-    } catch (ParseFailedException $parseFailedException) {
-        $caught = $parseFailedException;
-    }
-
-    expect($caught)->not->toBeNull()
-        ->and($caught->exitCode)->toBe(5)
-        ->and($caught->stderr)->toBe('boom')
-        ->and($caught->command)->toBe(['lit', 'parse', 'f']);
+it('rejects unknown and cross-provider options before parsing', function (): void {
+    expect(fn (): PendingParse => Parsel::file('a.pdf')->withProviderOptions(['typo' => true]))
+        ->toThrow(InvalidProviderOptionsException::class, 'typo')
+        ->and(fn (): PendingParse => Parsel::file('a.pdf')->withProviderOptions(AnyDocOptions::make()))
+        ->toThrow(InvalidProviderOptionsException::class, 'anydoc');
 });
 
-it('throws on empty json output', function (): void {
-    fakeParse(new FakeProcessRunner(['--format json' => '']))->parse();
-})->throws(InvalidOutputException::class, 'empty output');
+it('saves output according to the destination extension', function (): void {
+    Parsel::fake([
+        '--format text' => 'plain',
+        '--format markdown' => '# Markdown',
+        '--format json' => fixtureContents('liteparse-output.json'),
+    ]);
+    $base = sys_get_temp_dir().DIRECTORY_SEPARATOR.'parsel_save_'.uniqid();
 
-it('throws on malformed json', function (): void {
-    fakeParse(new FakeProcessRunner(['--format json' => '{not valid']))->parse();
-})->throws(InvalidOutputException::class, 'malformed JSON');
+    expect(Parsel::file(fixture('sample.pdf'))->save($base.'.txt'))->toBe($base.'.txt')
+        ->and(Parsel::file(fixture('sample.pdf'))->save($base.'.md'))->toBe($base.'.md')
+        ->and(Parsel::file(fixture('sample.pdf'))->save($base.'.json'))->toBe($base.'.json')
+        ->and(file_get_contents($base.'.json'))->toContain('textItems');
 
-it('throws when json is not an object', function (): void {
-    fakeParse(new FakeProcessRunner(['--format json' => '42']))->parse();
-})->throws(InvalidOutputException::class, 'expected a JSON object');
+    unlink($base.'.txt');
+    unlink($base.'.md');
+    unlink($base.'.json');
+});
 
-it('throws before running when the source file is missing', function (): void {
-    $fake = new FakeProcessRunner(['parse' => 'unused']);
-    $parse = new PendingParse(Source::fromPath('/no/such/file.pdf'), $fake, binary: 'lit');
-    $caught = null;
+it('rejects unsupported anydoc capabilities before executing the driver', function (string $method, array $arguments): void {
+    $fake = Parsel::fake();
 
-    try {
-        $parse->text();
-    } catch (SourceNotFoundException $sourceNotFoundException) {
-        $caught = $sourceNotFoundException;
-    }
-
-    expect($caught)->not->toBeNull()
+    expect(fn () => Parsel::driver('anydoc')->file('missing.docx')->{$method}(...$arguments))
+        ->toThrow(UnsupportedCapabilityException::class)
         ->and($fake->ranCount())->toBe(0);
-});
-
-it('throws when the binary cannot be resolved', function (): void {
-    $parse = new PendingParse(
-        Source::fromPath(fixture('sample.pdf')),
-        new FakeProcessRunner,
-        new BinaryResolver(new FakeExecutableFinder),
-    );
-
-    $parse->text();
-})->throws(BinaryNotFoundException::class);
-
-it('supports backward-compat aliases for renamed methods', function (string $method, array $args, array $expected): void {
-    $fake = new FakeProcessRunner(['--format text' => '']);
-
-    fakeParse($fake)->{$method}(...$args)->text();
-
-    expect($fake->recordedCommands()[0])->toContain(...$expected);
 })->with([
-    'dpi alias' => ['dpi', [300], ['--dpi', '300']],
-    'password alias' => ['password', ['secret'], ['--password', 'secret']],
-    'binary alias' => ['binary', ['/custom/lit'], ['/custom/lit']],
+    'text' => ['text', []],
+    'structured document' => ['parse', []],
+    'array' => ['toArray', []],
+    'screenshots' => ['screenshots', ['/tmp']],
 ]);
+
+it('rejects unsupported generators and save formats lazily', function (): void {
+    Parsel::fake();
+
+    expect(fn (): array => iterator_to_array(Parsel::driver('anydoc')->file('missing.docx')->lazyPages()))
+        ->toThrow(UnsupportedCapabilityException::class, 'lazy pages')
+        ->and(fn (): string => Parsel::driver('anydoc')->file('missing.docx')->save('/tmp/output.json'))
+        ->toThrow(UnsupportedCapabilityException::class, 'JSON');
+});

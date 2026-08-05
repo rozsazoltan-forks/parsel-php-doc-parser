@@ -7,179 +7,169 @@
 <p align="center">
     <a href="https://github.com/shipfastlabs/parsel/actions"><img alt="Tests" src="https://github.com/shipfastlabs/parsel/actions/workflows/tests.yml/badge.svg"></a>
     <a href="https://packagist.org/packages/shipfastlabs/parsel"><img alt="Latest Version" src="https://img.shields.io/packagist/v/shipfastlabs/parsel"></a>
-    <a href="https://packagist.org/packages/shipfastlabs/parsel"><img alt="Total Downloads" src="https://img.shields.io/packagist/dt/shipfastlabs/parsel"></a>
     <a href="https://packagist.org/packages/shipfastlabs/parsel"><img alt="License" src="https://img.shields.io/packagist/l/shipfastlabs/parsel"></a>
 </p>
 
-Parsel provides an expressive PHP API for parsing PDFs, Office documents, and images. Your documents are processed locally, allowing you to extract plain text, structured page data, coordinates, and screenshots without sending files to an external service.
-
-Parsel may return plain text, Markdown, structured document data, page screenshots, or one page at a time for larger documents. It is designed to feel natural in PHP applications while still giving you access to advanced parser options when you need them.
+Parsel provides one expressive PHP API for document parsing, backed by interchangeable drivers. Version 1.0 includes local [LiteParse](https://github.com/run-llama/liteparse) and [AnyDoc](https://github.com/firecrawl/anydoc) drivers and public contracts for custom or future hosted providers.
 
 ```php
 use Shipfastlabs\Parsel;
 
-$text = Parsel::file('invoice.pdf')->text();
+$markdown = Parsel::file('report.pdf')->markdown(); // LiteParse by default
 
-$document = Parsel::file('invoice.pdf')
-    ->pageRange(1, 5)
-    ->withOcr(language: 'eng')
-    ->withDpi(300)
-    ->parse();
-
-foreach ($document->pages as $page) {
-    foreach ($page->items as $item) {
-        echo "{$item->text} @ ({$item->x}, {$item->y})\n";
-    }
-}
+$markdown = Parsel::driver('anydoc')
+    ->file('report.docx')
+    ->markdown();
 ```
 
-Parsel requires PHP 8.4 or greater and the `lit` binary.
+Parsel requires PHP 8.4 or greater.
 
 ## Installation
-
-You may install Parsel via Composer:
 
 ```bash
 composer require shipfastlabs/parsel
 ```
 
-Install the required `lit` binary:
+Install only the parser you use. With no `--driver`, the installer installs LiteParse:
 
 ```bash
-vendor/bin/parsel-install-lit
+vendor/bin/parsel-install
+vendor/bin/parsel-install --driver=anydoc
+vendor/bin/parsel-install --driver=all
 ```
 
-For Office documents, spreadsheets, presentations, and images, you may also install the system dependencies:
+LiteParse supports npm, pnpm, bun, pip, and cargo. AnyDoc supports npm, pnpm, and bun and requires Node.js 20 or newer.
 
 ```bash
-vendor/bin/parsel-install-lit --with-system-dependencies
+vendor/bin/parsel-install --driver=liteparse --manager=cargo
+vendor/bin/parsel-install --driver=anydoc --manager=npm
+vendor/bin/parsel-install --driver=liteparse --with-system-dependencies
 ```
 
-You may choose the installer used for the `lit` binary:
+`vendor/bin/parsel-install-lit` remains as a compatibility alias.
 
-```bash
-vendor/bin/parsel-install-lit --manager=npm
-vendor/bin/parsel-install-lit --manager=pnpm
-vendor/bin/parsel-install-lit --manager=bun
-vendor/bin/parsel-install-lit --manager=pip
-vendor/bin/parsel-install-lit --manager=cargo
-```
+## Drivers and capabilities
 
-You may also install `lit` yourself using one of the following commands:
+| Capability | LiteParse | AnyDoc |
+| --- | --- | --- |
+| Markdown | Yes | Yes |
+| Plain text | Yes | No |
+| Structured pages and coordinates | Yes | No |
+| Lazy pages | Yes | No |
+| Screenshots | Yes | No |
+| OCR | Yes | No |
 
-```bash
-cargo install liteparse
-pip install liteparse
-npm i -g @llamaindex/liteparse
-pnpm add -g @llamaindex/liteparse
-bun add -g @llamaindex/liteparse
-```
+Calling an unavailable operation throws `UnsupportedCapabilityException` before the provider is executed. Parsel does not derive fake structured data or plain text from AnyDoc Markdown.
 
-If you prefer to install the system dependencies yourself, use the matching commands for your platform:
-
-```bash
-# macOS
-brew install --cask libreoffice # For Office Document
-brew install imagemagick # For Images
-
-# Ubuntu / Debian
-apt-get install libreoffice # For Office Document
-apt-get install imagemagick # For Images
-
-# Windows
-choco install libreoffice-fresh # For Office Document
-choco install imagemagick.app # For Images
-```
-
-LibreOffice is used for Office document conversion, ImageMagick is used for image conversion, and OCR support uses Tesseract through liteparse.
-
-## Parsing Files
-
-The `file` method creates a parser instance for a document that already exists on disk. Once a source has been selected, you may choose how the parsed output should be returned.
+LiteParse remains the default driver, so existing basic calls continue to work:
 
 ```php
-use Shipfastlabs\Parsel;
-
-$text = Parsel::file('/path/to/report.pdf')->text();
+$text = Parsel::file('invoice.pdf')->text();
+$document = Parsel::file('invoice.pdf')->parse();
+$array = Parsel::file('invoice.pdf')->toArray();
 ```
 
-You may also parse raw bytes. This is useful when working with uploaded files, database blobs, or documents that have not been persisted to disk. Because byte sources do not include a filename, you should provide the file extension.
+Select AnyDoc explicitly or change the process-wide default:
 
 ```php
-$document = Parsel::bytes($uploadedBytes, 'pdf')->parse();
+Parsel::driver('anydoc')->file('book.epub')->markdown();
+
+Parsel::defaultDriver('anydoc');
+Parsel::file('book.epub')->markdown();
 ```
 
-Parsel may be used with PDFs, Word documents, spreadsheets, presentations, and images. The same fluent API is used for each supported file type:
+For dependency injection and long-running applications, use an instance:
 
 ```php
-$text = Parsel::file('contract.docx')->text();
+use Shipfastlabs\Parsel\ParselManager;
 
-$rows = Parsel::file('report.xlsx')->text();
+$parsel = new ParselManager;
+$markdown = $parsel->driver('anydoc')->file('report.docx')->markdown();
+```
 
-$slides = Parsel::file('deck.pptx')->text();
+## Sources and common options
 
-$scan = Parsel::file('receipt.png')
-    ->withOcr()
-    ->text();
+Both drivers accept paths and raw bytes. Byte sources require an extension so signature-less formats such as CSV can be identified reliably.
 
-$photo = Parsel::file('invoice.jpg')
-    ->withOcr(language: 'eng')
+```php
+$markdown = Parsel::file('/path/to/report.pdf')->markdown();
+$markdown = Parsel::bytes($uploadedBytes, 'pdf')->markdown();
+
+$markdown = Parsel::driver('anydoc')
+    ->bytes($csvBytes, 'csv')
+    ->withProviderOptions(['format' => 'csv'])
+    ->markdown();
+```
+
+Timeout is portable across drivers:
+
+```php
+Parsel::file('report.pdf')->withTimeout(120)->markdown();
+```
+
+`save()` selects the corresponding capability from the extension. Both drivers support `.md` and `.markdown`; LiteParse additionally supports `.txt` and `.json`.
+
+```php
+Parsel::driver('anydoc')->file('report.docx')->save('report.md');
+Parsel::file('report.pdf')->save('report.json');
+```
+
+## Provider options
+
+Provider-specific behavior belongs in `withProviderOptions()`. It accepts a typed fluent object or a strict associative array.
+
+```php
+use Shipfastlabs\Parsel\Options\LiteParseOptions;
+
+$options = LiteParseOptions::make()
+    ->pageRange(1, 5)
+    ->page(10)
+    ->withOcr(language: 'eng', workers: 8)
+    ->withDpi(300)
+    ->preserveSmallText();
+
+$document = Parsel::file('invoice.pdf')
+    ->withProviderOptions($options)
     ->parse();
 ```
 
-## Plain Text
-
-The `text` method returns the parsed document text as a string. Parsel removes page header markers from text output before returning it.
-
-```php
-$text = Parsel::file('document.pdf')
-    ->withoutOcr()
-    ->text();
-```
-
-## Markdown
-
-The `markdown` method returns the parsed document as Markdown. Headings, paragraphs, lists, and tables are reconstructed from the document layout, which makes the output well suited to LLM prompts, search indexes, and content pipelines.
-
-```php
-$markdown = Parsel::file('document.pdf')->markdown();
-```
-
-Raster images are rendered as Markdown image placeholders by default. You may use the `withImages` method to change how images are handled, and pass a directory when the image bytes should be written to disk:
+LiteParse options include page selection, maximum pages, OCR settings, DPI, small-text preservation, passwords, Markdown images and links, headers and footers, and a binary override.
 
 ```php
 use Shipfastlabs\Parsel\Enums\ImageMode;
 
-Parsel::file('document.pdf')->withImages(ImageMode::Off)->markdown();
-
-Parsel::file('document.pdf')->withImages(ImageMode::Embed, '/path/to/images')->markdown();
+$markdown = Parsel::file('report.pdf')
+    ->withProviderOptions(
+        LiteParseOptions::make()
+            ->withoutOcr()
+            ->withImages(ImageMode::Embed, '/path/to/images')
+            ->withoutLinks()
+            ->keepHeadersAndFooters()
+    )
+    ->markdown();
 ```
 
-The `withoutImages` method is a shortcut for `ImageMode::Off`:
+AnyDoc supports explicit input format and binary overrides:
 
 ```php
-Parsel::file('document.pdf')->withoutImages()->markdown();
+use Shipfastlabs\Parsel\Options\AnyDocOptions;
+
+$markdown = Parsel::driver('anydoc')
+    ->file('data.csv')
+    ->withProviderOptions(
+        AnyDocOptions::make()->format('csv')
+    )
+    ->markdown();
 ```
 
-Hyperlinks are extracted as Markdown links. If you would rather receive the plain anchor text, you may use the `withoutLinks` method:
+Array keys are validated, so typos fail early. For a newly released upstream CLI flag, use the explicit escape hatch:
 
 ```php
-Parsel::file('document.pdf')->withoutLinks()->markdown();
+$options = LiteParseOptions::make()->option('new-upstream-flag', 42);
+$options = AnyDocOptions::make()->option('new-upstream-flag');
 ```
 
-Running headers and footers are stripped from Markdown output. You may keep them using the `keepHeadersAndFooters` method:
-
-```php
-Parsel::file('document.pdf')->keepHeadersAndFooters()->markdown();
-```
-
-These options only shape Markdown output, so they are ignored by the `text`, `parse`, and `toArray` methods.
-
-Markdown output requires `lit` 2.1 or greater.
-
-## Structured Documents
-
-The `parse` method returns a `Document` object containing the document text, metadata, pages, and positioned text items. This is useful when you need coordinates, font information, or OCR confidence values.
+## Structured LiteParse output
 
 ```php
 $document = Parsel::file('document.pdf')->parse();
@@ -189,206 +179,79 @@ echo $document->pageCount();
 
 foreach ($document->pages as $page) {
     foreach ($page->items as $item) {
-        echo $item->text;
+        echo "{$item->text} @ ({$item->x}, {$item->y})\n";
     }
 }
 ```
 
-The document may also be returned as an array:
+Stream large documents without decoding the complete page array:
 
 ```php
-$array = Parsel::file('document.pdf')->toArray();
-```
-
-## Page Selection
-
-The `page`, `pages`, and `pageRange` methods may be used to limit parsing to specific pages. These methods are additive, so you may combine multiple calls before parsing the document.
-
-```php
-Parsel::file('document.pdf')->page(7);
-
-Parsel::file('document.pdf')->pages(1, 3, 5);
-
-Parsel::file('document.pdf')->pages('1-5', 10);
-
-Parsel::file('document.pdf')->pageRange(1, 5);
-
-Parsel::file('document.pdf')->pageRange(1, 5)->page(10);
-```
-
-If you only need to limit how many pages are parsed, you may use the `maxPages` method:
-
-```php
-Parsel::file('document.pdf')->maxPages(50)->text();
-```
-
-## OCR
-
-OCR is disabled by default so that parsing remains fast and predictable. You may enable OCR using the `withOcr` method:
-
-```php
-$text = Parsel::file('scan.pdf')->withOcr()->text();
-```
-
-The `withOcr` method accepts named arguments for the most common OCR options:
-
-```php
-$text = Parsel::file('scan.pdf')
-    ->withOcr(
-        language: 'fra',
-        tessdataPath: '/usr/share/tessdata',
-        serverUrl: 'http://localhost:8828/ocr',
-        workers: 8,
-    )
-    ->text();
-```
-
-If you would like to be explicit that OCR should not be used, you may call `withoutOcr`:
-
-```php
-$text = Parsel::file('document.pdf')->withoutOcr()->text();
-```
-
-## Rendering Options
-
-Parsel includes convenience methods for common parser options such as rendering DPI, small text preservation, encrypted documents, and per-call process settings.
-
-```php
-Parsel::file('document.pdf')->withDpi(300);
-
-Parsel::file('document.pdf')->preserveSmallText();
-
-Parsel::file('secret.pdf')->withPassword('hunter2');
-
-Parsel::file('document.pdf')->withBinary('/usr/local/bin/lit');
-
-Parsel::file('document.pdf')->withTimeout(120);
-```
-
-## Additional Options
-
-If you need to pass a flag that Parsel does not yet provide as a dedicated method, you may pass the option directly using the `option` method. Boolean options may be passed without a value, while options that require a value may receive one as the second argument.
-
-```php
-Parsel::file('document.pdf')->option('some-new-flag');
-
-Parsel::file('document.pdf')->option('some-new-flag', 42);
-```
-
-## Saving Output
-
-The `save` method writes parsed output to disk and returns the path that was written. When the target path ends in `.json`, Parsel will write JSON output. When it ends in `.md` or `.markdown`, Parsel will write Markdown. For all other extensions, Parsel will write plain text.
-
-```php
-Parsel::file('document.pdf')->save('document.txt');
-
-Parsel::file('document.pdf')->save('document.json');
-
-Parsel::file('document.pdf')->save('document.md');
-```
-
-## Screenshots
-
-You may use the `screenshots` method to render page screenshots into a directory. The method returns the image files found in the output directory after parsing has finished.
-
-```php
-$screenshots = Parsel::file('document.pdf')
-    ->pageRange(1, 5)
-    ->screenshots('/tmp/parsel-pages');
-```
-
-For predictable results, you should pass a dedicated output directory that does not contain unrelated files.
-
-## Streaming Large Documents
-
-The `parse` and `toArray` methods load the parsed document into memory. When working with large documents, you may use `lazyPages` to process one page at a time.
-
-```php
-foreach (Parsel::file('large-document.pdf')->lazyPages() as $page) {
-    foreach ($page->items as $item) {
-        // Process one page at a time...
-    }
+foreach (Parsel::file('large.pdf')->lazyPages() as $page) {
+    echo $page->text;
 }
 ```
 
-This allows Parsel to read pages incrementally instead of keeping the full document in memory.
-
-## Document Data
-
-A parsed `Document` contains the full text, metadata, and a list of pages. Each page contains its dimensions, page text, and text items with position data.
+Screenshots require an existing destination directory:
 
 ```php
-$document->text;
-$document->metadata;
-$document->pages;
-$document->pageCount();
-
-$page->number;
-$page->width;
-$page->height;
-$page->text;
-$page->items;
-
-$item->text;
-$item->x;
-$item->y;
-$item->width;
-$item->height;
-$item->fontName;
-$item->fontSize;
-$item->confidence;
+$files = Parsel::file('document.pdf')
+    ->withProviderOptions(LiteParseOptions::make()->pageRange(1, 5)->withDpi(200))
+    ->screenshots('/path/to/screenshots');
 ```
 
-## Binary Resolution
+## Binary resolution
 
-When Parsel needs to parse a document, it resolves the `lit` binary in the following order:
+Each local driver resolves its executable in this order:
 
-1. The per-call binary configured with `withBinary`.
-2. The global binary configured with `Parsel::usingBinary`.
-3. The `PARSEL_LIT_BINARY` environment variable.
-4. The `lit` binary available on the system `PATH`.
+1. The typed or array provider option `binary`.
+2. `PARSEL_LITEPARSE_BINARY` or `PARSEL_ANYDOC_BINARY`.
+3. `lit` or `anydoc` on `PATH`.
 
-If no binary can be resolved, Parsel will throw a `BinaryNotFoundException`.
+`PARSEL_LIT_BINARY` remains a fallback for LiteParse during the 1.0 migration.
 
-```php
-Parsel::usingBinary('/usr/local/bin/lit');
+## Custom drivers
 
-Parsel::defaultTimeout(120);
-```
-
-## Testing
-
-Parsel includes a fake runner that allows your tests to exercise parsing code without spawning the real binary. Response keys are matched against the command line as substrings. When multiple responses match, the longest matching key is used.
+Implement the minimal `Driver` contract for Markdown, then opt into additional capability contracts only when the provider supports them.
 
 ```php
 use Shipfastlabs\Parsel;
+use Shipfastlabs\Parsel\Contracts\Driver;
+use Shipfastlabs\Parsel\ParseRequest;
+use Shipfastlabs\Parsel\ParselManager;
 
+Parsel::extend('company-api', function (ParselManager $manager): Driver {
+    return new CompanyApiDriver;
+});
+
+$markdown = Parsel::driver('company-api')->file('report.pdf')->markdown();
+```
+
+Drivers are resolved lazily and cached by the manager. Implement `TextDriver`, `StructuredDocumentDriver`, `LazyPageDriver`, or `ScreenshotDriver` to add those operations. A remote driver may use any HTTP client and does not need to depend on Parsel's CLI process infrastructure.
+
+## Testing
+
+`Parsel::fake()` swaps the shared local process runner and matches canned responses against command substrings:
+
+```php
 $fake = Parsel::fake([
     '--format json' => file_get_contents(__DIR__.'/fixtures/lit-output.json'),
+    'anydoc' => '# Converted document',
 ]);
 
 $document = Parsel::file('invoice.pdf')->parse();
+$markdown = Parsel::driver('anydoc')->file('report.docx')->markdown();
 
-expect($fake->recordedCommands()[0])->toContain('--format', 'json');
+expect($fake->ranCount())->toBe(2);
 ```
 
-String responses are returned as successful stdout. If you need control over the exit code or stderr, you may provide a `ProcessResult` instance instead.
+See [UPGRADE.md](UPGRADE.md) when moving from Parsel 0.x.
 
 ## Development
 
-Parsel uses Pint, Rector, PHPStan, and Pest to keep the codebase formatted and well tested.
-
 ```bash
-composer lint
-composer test:types
-composer test:unit
 composer test
-```
-
-The integration tests run against a real parser installation and are skipped when the `lit` binary is not available:
-
-```bash
-./vendor/bin/pest --group=integration
+vendor/bin/pest --group=integration
 ```
 
 ## Credits

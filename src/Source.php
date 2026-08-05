@@ -31,7 +31,7 @@ final readonly class Source
         $normalized = strtolower(ltrim(trim($extension), '.'));
 
         if ($normalized === '') {
-            throw new InvalidArgumentException('A non-empty file extension is required for byte sources so liteparse can detect the format.');
+            throw new InvalidArgumentException('A non-empty file extension is required for byte sources so the selected driver can detect the format.');
         }
 
         return new self($normalized, null, $contents);
@@ -45,6 +45,11 @@ final readonly class Source
     public function contents(): string
     {
         return $this->contents ?? '';
+    }
+
+    public function path(): ?string
+    {
+        return $this->filePath;
     }
 
     public function validatedPath(Filesystem $files): string

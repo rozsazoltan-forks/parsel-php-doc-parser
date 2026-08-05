@@ -1,6 +1,6 @@
 {
     "name": "shipfastlabs/parsel",
-    "description": "A pure-PHP, expressive wrapper around the liteparse `lit` CLI for fast, local document parsing.",
+    "description": "An expressive, driver-based PHP API for local and remote document parsers.",
     "keywords": [
         "php",
         "pdf",
@@ -8,7 +8,9 @@
         "parser",
         "ocr",
         "liteparse",
-        "lit"
+        "lit",
+        "anydoc",
+        "driver"
     ],
     "license": "MIT",
     "authors": [
@@ -43,6 +45,7 @@
         }
     },
     "bin": [
+        "bin/parsel-install",
         "bin/parsel-install-lit"
     ],
     "minimum-stability": "dev",

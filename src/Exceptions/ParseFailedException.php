@@ -20,12 +20,12 @@ final class ParseFailedException extends ParselException
         parent::__construct($message);
     }
 
-    public static function fromResult(ProcessResult $result): self
+    public static function fromResult(ProcessResult $result, string $driver = 'parser'): self
     {
         $detail = $result->stderr === '' ? '(no error output)' : $result->stderr;
 
         return new self(
-            sprintf('liteparse exited with code %d: %s', $result->exitCode, $detail),
+            sprintf('%s exited with code %d: %s', $driver, $result->exitCode, $detail),
             $result->exitCode,
             $result->stderr,
             $result->command,

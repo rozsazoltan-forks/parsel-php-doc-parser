@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Shipfastlabs\Parsel;
 use Shipfastlabs\Parsel\Exceptions\BinaryNotFoundException;
+use Shipfastlabs\Parsel\Exceptions\ParseFailedException;
+use Shipfastlabs\Parsel\Options\LiteParseOptions;
 use Shipfastlabs\Parsel\Support\BinaryResolver;
 
 function litAvailable(): bool
@@ -27,7 +29,9 @@ it('parses a real pdf into text', function (): void {
         $this->markTestSkipped('lit binary not installed');
     }
 
-    $text = Parsel::file(demoPdf())->page(1)->withoutOcr()->text();
+    $text = Parsel::file(demoPdf())
+        ->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())
+        ->text();
 
     expect($text)->toContain('UNITED STATES');
 })->group('integration');
@@ -37,7 +41,17 @@ it('parses a real pdf into markdown', function (): void {
         $this->markTestSkipped('lit binary not installed');
     }
 
-    $markdown = Parsel::file(demoPdf())->page(1)->withoutOcr()->markdown();
+    try {
+        $markdown = Parsel::file(demoPdf())
+            ->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())
+            ->markdown();
+    } catch (ParseFailedException $parseFailedException) {
+        if (str_contains($parseFailedException->stderr, "unknown format 'markdown'")) {
+            $this->markTestSkipped('installed lit binary does not support Markdown output');
+        }
+
+        throw $parseFailedException;
+    }
 
     expect($markdown)->toContain('UNITED STATES')
         ->and($markdown)->toContain('#');
@@ -48,7 +62,9 @@ it('parses a real pdf into a structured document with coordinates', function ():
         $this->markTestSkipped('lit binary not installed');
     }
 
-    $document = Parsel::file(demoPdf())->page(1)->withoutOcr()->parse();
+    $document = Parsel::file(demoPdf())
+        ->withProviderOptions(LiteParseOptions::make()->page(1)->withoutOcr())
+        ->parse();
 
     expect($document->pageCount())->toBeGreaterThan(0)
         ->and($document->pages[0]->items)->not->toBeEmpty()
@@ -60,7 +76,9 @@ it('streams pages of a real pdf lazily', function (): void {
         $this->markTestSkipped('lit binary not installed');
     }
 
-    $pages = iterator_to_array(Parsel::file(demoPdf())->pageRange(1, 2)->withoutOcr()->lazyPages());
+    $pages = iterator_to_array(Parsel::file(demoPdf())
+        ->withProviderOptions(LiteParseOptions::make()->pageRange(1, 2)->withoutOcr())
+        ->lazyPages());
 
     expect($pages)->not->toBeEmpty()
         ->and($pages[0]->items)->not->toBeEmpty()

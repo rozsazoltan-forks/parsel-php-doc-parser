@@ -3,51 +3,113 @@
 declare(strict_types=1);
 
 use Shipfastlabs\Parsel;
+use Shipfastlabs\Parsel\Contracts\Driver;
+use Shipfastlabs\Parsel\Exceptions\DriverNotFoundException;
+use Shipfastlabs\Parsel\ParselManager;
+use Shipfastlabs\Parsel\Parser;
+use Shipfastlabs\Parsel\ParseRequest;
 use Shipfastlabs\Parsel\PendingParse;
 use Shipfastlabs\Parsel\Support\FakeProcessRunner;
 
-it('creates a pending parse from a file with the real runner', function (): void {
-    expect(Parsel::file('document.pdf'))->toBeInstanceOf(PendingParse::class);
+it('creates pending parses through the default and named drivers', function (): void {
+    expect(Parsel::file('document.pdf'))->toBeInstanceOf(PendingParse::class)
+        ->and(Parsel::bytes('raw', 'pdf'))->toBeInstanceOf(PendingParse::class)
+        ->and(Parsel::driver('anydoc'))->toBeInstanceOf(Parser::class);
 });
 
-it('creates a pending parse from bytes', function (): void {
-    expect(Parsel::bytes('rawdata', 'pdf'))->toBeInstanceOf(PendingParse::class);
+it('defaults to liteparse and can change the default driver', function (): void {
+    $fake = Parsel::fake(['anydoc' => '# anydoc']);
+    Parsel::defaultDriver('anydoc');
+
+    expect(Parsel::file(fixture('sample.pdf'))->markdown())->toBe('# anydoc')
+        ->and($fake->recordedCommands()[0][0])->toBe('anydoc');
 });
 
-it('fakes parsing without requiring a real binary', function (): void {
-    $fake = Parsel::fake(['--format text' => 'hello']);
+it('supports an injectable manager and fluent default selection', function (): void {
+    $fake = new FakeProcessRunner(['anydoc' => 'managed']);
+    $manager = new ParselManager(process: $fake, binaries: ['anydoc' => 'anydoc'])->defaultDriver('anydoc');
 
-    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('hello')
-        ->and($fake)->toBeInstanceOf(FakeProcessRunner::class)
-        ->and($fake->ranCount())->toBe(1);
+    expect($manager->file(fixture('sample.pdf'))->markdown())->toBe('managed')
+        ->and($manager->bytes('raw', 'pdf'))->toBeInstanceOf(PendingParse::class)
+        ->and($manager->forgetDrivers())->toBe($manager);
 });
 
-it('keeps an explicitly configured binary when faking', function (): void {
-    Parsel::usingBinary('/custom/lit');
-    $fake = Parsel::fake(['--format text' => 'ok']);
+it('registers and caches custom drivers', function (): void {
+    $created = 0;
+    $driver = new class implements Driver
+    {
+        public function name(): string
+        {
+            return 'custom';
+        }
 
-    Parsel::file(fixture('sample.pdf'))->text();
+        public function validateOptions(array $options): void {}
 
-    expect($fake->recordedCommands()[0][0])->toBe('/custom/lit');
+        public function markdown(ParseRequest $request): string
+        {
+            return $request->source->extension;
+        }
+    };
+
+    Parsel::extend('custom', function (ParselManager $manager) use (&$created, $driver): Driver {
+        $created++;
+
+        return $driver;
+    });
+
+    expect(Parsel::driver('custom')->file('report.docx')->markdown())->toBe('docx')
+        ->and(Parsel::driver('custom')->file('report.pdf')->markdown())->toBe('pdf')
+        ->and($created)->toBe(1);
+
+    Parsel::fake();
+
+    expect(Parsel::driver('custom')->file('report.txt')->markdown())->toBe('txt')
+        ->and($created)->toBe(2);
 });
 
-it('swaps in a custom runner', function (): void {
+it('replaces a resolved custom driver when extended again', function (): void {
+    $manager = new ParselManager;
+    $factory = fn (string $output): Closure => fn (ParselManager $manager): Driver => new readonly class($output) implements Driver
+    {
+        public function __construct(private string $output) {}
+
+        public function name(): string
+        {
+            return 'custom';
+        }
+
+        public function validateOptions(array $options): void {}
+
+        public function markdown(ParseRequest $request): string
+        {
+            return $this->output;
+        }
+    };
+
+    $manager->extend('custom', $factory('first'));
+    expect($manager->driver('custom')->file('a.pdf')->markdown())->toBe('first');
+
+    $manager->extend('custom', $factory('second'));
+    expect($manager->driver('custom')->file('a.pdf')->markdown())->toBe('second');
+});
+
+it('throws for an unknown driver', function (): void {
+    Parsel::driver('missing');
+})->throws(DriverNotFoundException::class, 'missing');
+
+it('fakes and swaps process runners and applies default timeout', function (): void {
+    Parsel::defaultTimeout(null);
+    $fake = Parsel::fake(['--format text' => 'fake']);
+
+    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('fake')
+        ->and($fake)->toBeInstanceOf(FakeProcessRunner::class);
+
     Parsel::swap(new FakeProcessRunner(['--format text' => 'swapped']));
-
     expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('swapped');
 });
 
-it('applies a default timeout', function (): void {
-    Parsel::defaultTimeout(5.0);
-    Parsel::fake(['--format text' => 'ok']);
-
-    expect(Parsel::file(fixture('sample.pdf'))->text())->toBe('ok');
-
-    Parsel::defaultTimeout(null);
-});
-
-it('flushes all configuration', function (): void {
-    Parsel::usingBinary('/custom/lit');
+it('flushes facade configuration', function (): void {
+    Parsel::defaultDriver('anydoc');
     Parsel::fake();
     Parsel::flush();
 
